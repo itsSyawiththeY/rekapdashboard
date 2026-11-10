@@ -115,6 +115,7 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const BUCKET = 'foto-resi';
 
 // ---------- Konfigurasi tiap sheet ----------
+const KE_PEMBATALAN = ['Cancel', 'Co Ulang'];
 const TOKO_OPTS = ['Tianzhy', 'SerbaBpp', 'Serbajkt'];
 const KEPUTUSAN_OPTS = ['Cancel', 'Ganti kode', 'Kirim setengah', 'Co Ulang', 'Lanjut offline'];
 const TABS = {
@@ -260,7 +261,9 @@ async function saveInline(id, key, value) {
   render();
   const { error } = await sb.from(TABS[current].table).update({ [key]: value || null }).eq('id', id);
   if (error) { row[key] = old; render(); toast('Gagal: ' + error.message); }
-  else toast(value ? 'Keputusan tersimpan, resi ditutup' : 'Keputusan dikosongkan, resi dibuka lagi');
+  else toast(!value ? 'Keputusan dikosongkan, resi dibuka lagi'
+    : KE_PEMBATALAN.includes(value) ? 'Resi ditutup dan dicatat di Rekap Pembatalan'
+    : 'Keputusan tersimpan, resi ditutup');
 }
 ['q', 'from', 'to'].forEach(id => $(id).addEventListener('input', render));
 
