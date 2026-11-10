@@ -107,11 +107,13 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const BUCKET = 'foto-resi';
 
 // ---------- Konfigurasi tiap sheet ----------
+const TOKO_OPTS = ['Tianzhy', 'SerbaBpp', 'Serbajkt'];
 const TABS = {
   pembatalan: {
     label: 'Rekap Pembatalan', table: 'pembatalan', dateKey: 'tanggal', qtyKey: 'qty',
     cols: [
       { k:'tanggal', l:'Tanggal', t:'datetime' },
+      { k:'toko', l:'Toko', t:'select', opts:TOKO_OPTS },
       { k:'no_pesanan', l:'No Pesanan', req:true },
       { k:'kode_barang', l:'Kode Barang', req:true },
       { k:'qty', l:'Qty', t:'number' },
@@ -123,7 +125,7 @@ const TABS = {
     cols: [
       { k:'tanggal_order', l:'Tanggal Order', t:'date' },
       { k:'tanggal_komplain', l:'Tanggal Komplain', t:'date', req:true },
-      { k:'toko', l:'Toko' },
+      { k:'toko', l:'Toko', t:'select', opts:TOKO_OPTS },
       { k:'nama_akun', l:'Nama Akun' },
       { k:'no_pesanan', l:'No. Pesanan', req:true },
       { k:'resi', l:'Resi' },
@@ -135,6 +137,7 @@ const TABS = {
     label: 'Resi Naik', table: 'resi_naik', dateKey: 'tanggal', qtyKey: 'qty',
     cols: [
       { k:'tanggal', l:'Tanggal', t:'date', req:true },
+      { k:'toko', l:'Toko', t:'select', opts:TOKO_OPTS },
       { k:'no_pesanan', l:'No Pesanan', req:true },
       { k:'resi', l:'Resi' },
       { k:'barang', l:'Barang' },
