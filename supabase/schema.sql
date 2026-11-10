@@ -35,6 +35,7 @@ create table if not exists public.resi_naik (
   barang text,
   qty int not null default 1,
   alasan text,
+  keputusan text,
   foto_resi text,
   created_at timestamptz not null default now()
 );
@@ -42,6 +43,7 @@ create table if not exists public.resi_naik (
 -- Untuk database yang sudah dibuat sebelumnya: tambah kolom toko
 alter table public.pembatalan add column if not exists toko text;
 alter table public.resi_naik add column if not exists toko text;
+alter table public.resi_naik add column if not exists keputusan text;
 
 -- Row Level Security: hanya user yang login yang bisa akses
 alter table public.pembatalan enable row level security;
