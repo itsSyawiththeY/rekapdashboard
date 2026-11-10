@@ -39,6 +39,8 @@
   th { background:var(--head); font-size:12px; text-transform:uppercase; letter-spacing:.03em; color:var(--muted); white-space:nowrap; }
   tr:last-child td { border-bottom:0; }
   td.num { text-align:right; font-variant-numeric:tabular-nums; }
+  h2.sec { font-size:15px; margin:24px 0 8px; }
+  h2.sec.first { margin-top:0; }
   td select { padding:4px 8px; min-width:140px; }
   td.act { white-space:nowrap; text-align:right; }
   .empty { padding:36px; text-align:center; color:var(--muted); }
@@ -84,7 +86,12 @@
       <button id="addBtn" class="btn primary">+ Tambah</button>
     </div>
     <p class="summary" id="summary"></p>
+    <h2 id="openTitle" class="sec first hidden"></h2>
     <div class="wrap"><table><thead id="thead"></thead><tbody id="tbody"></tbody></table><div id="empty" class="empty hidden">Belum ada data.</div></div>
+    <section id="closedSec" class="hidden">
+      <h2 id="closedTitle" class="sec"></h2>
+      <div class="wrap"><table><thead id="thead2"></thead><tbody id="tbody2"></tbody></table><div id="empty2" class="empty hidden">Belum ada resi yang ditutup.</div></div>
+    </section>
   </main>
 </div>
 
@@ -136,7 +143,7 @@ const TABS = {
     ],
   },
   resi_naik: {
-    label: 'Resi Naik', table: 'resi_naik', dateKey: 'tanggal', qtyKey: 'qty',
+    label: 'Resi Naik', table: 'resi_naik', dateKey: 'tanggal', qtyKey: 'qty', closedKey: 'keputusan',
     cols: [
       { k:'tanggal', l:'Tanggal', t:'date', req:true },
       { k:'toko', l:'Toko', t:'select', opts:TOKO_OPTS },
@@ -212,27 +219,48 @@ function filtered() {
   });
 }
 
-function render() {
-  const t = TABS[current], list = filtered();
-  $('thead').innerHTML = '<tr>' + t.cols.map(c => `<th>${c.l}</th>`).join('') + '<th></th></tr>';
-  $('tbody').innerHTML = list.map(r =>
-    '<tr>' + t.cols.map(c => c.t === 'inline'
-      ? `<td><select data-inline="${r.id}" data-k="${c.k}"><option value="">— Pilih —</option>${c.opts.map(o => `<option ${r[c.k] === o ? 'selected' : ''}>${o}</option>`).join('')}</select></td>`
-      : `<td class="${c.t === 'number' ? 'num' : ''}">${fmt(c, r[c.k])}</td>`).join('') +
-    `<td class="act"><button class="btn sm" data-edit="${r.id}">Edit</button> <button class="btn sm danger" data-del="${r.id}">Hapus</button></td></tr>`).join('');
-  $('empty').classList.toggle('hidden', list.length > 0);
-  const qty = t.qtyKey ? ` · total qty ${list.reduce((s, r) => s + (r[t.qtyKey] || 0), 0)}` : '';
-  $('summary').textContent = `${list.length} data${qty}`;
-  $('tbody').querySelectorAll('[data-edit]').forEach(b => b.onclick = () => openForm(rows.find(r => r.id === b.dataset.edit)));
-  $('tbody').querySelectorAll('[data-inline]').forEach(sel => sel.onchange = () => saveInline(sel.dataset.inline, sel.dataset.k, sel.value));
-  $('tbody').querySelectorAll('[data-del]').forEach(b => b.onclick = () => remove(b.dataset.del));
+function rowHtml(t, r) {
+  return '<tr>' + t.cols.map(c => c.t === 'inline'
+    ? `<td><select data-inline="${r.id}" data-k="${c.k}"><option value="">— Pilih —</option>${c.opts.map(o => `<option ${r[c.k] === o ? 'selected' : ''}>${o}</option>`).join('')}</select></td>`
+    : `<td class="${c.t === 'number' ? 'num' : ''}">${fmt(c, r[c.k])}</td>`).join('') +
+    `<td class="act"><button class="btn sm" data-edit="${r.id}">Edit</button> <button class="btn sm danger" data-del="${r.id}">Hapus</button></td></tr>`;
 }
+
+function fillTable(t, list, head, body, empty) {
+  $(head).innerHTML = '<tr>' + t.cols.map(c => `<th>${c.l}</th>`).join('') + '<th></th></tr>';
+  $(body).innerHTML = list.map(r => rowHtml(t, r)).join('');
+  $(empty).classList.toggle('hidden', list.length > 0);
+  $(body).querySelectorAll('[data-edit]').forEach(b => b.onclick = () => openForm(rows.find(r => r.id === b.dataset.edit)));
+  $(body).querySelectorAll('[data-inline]').forEach(sel => sel.onchange = () => saveInline(sel.dataset.inline, sel.dataset.k, sel.value));
+  $(body).querySelectorAll('[data-del]').forEach(b => b.onclick = () => remove(b.dataset.del));
+}
+
+const sumQty = (t, list) => t.qtyKey ? list.reduce((s, r) => s + (r[t.qtyKey] || 0), 0) : 0;
+
+function render() {
+  const t = TABS[current], all = filtered(), split = !!t.closedKey;
+  const open = split ? all.filter(r => !r[t.closedKey]) : all;
+  const closed = split ? all.filter(r => r[t.closedKey]) : [];
+  fillTable(t, open, 'thead', 'tbody', 'empty');
+  $('empty').textContent = split ? 'Tidak ada resi yang menunggu keputusan.' : 'Belum ada data.';
+  $('openTitle').classList.toggle('hidden', !split);
+  $('closedSec').classList.toggle('hidden', !split);
+  if (split) {
+    fillTable(t, closed, 'thead2', 'tbody2', 'empty2');
+    $('openTitle').textContent = `Resi Naik · ${open.length} data · qty ${sumQty(t, open)}`;
+    $('closedTitle').textContent = `Resi Ditutup · ${closed.length} data · qty ${sumQty(t, closed)}`;
+  }
+  const qty = t.qtyKey ? ` · total qty ${sumQty(t, all)}` : '';
+  $('summary').textContent = `${all.length} data${qty}`;
+}
+
 async function saveInline(id, key, value) {
   const row = rows.find(r => r.id === id), old = row[key];
   row[key] = value || null;
+  render();
   const { error } = await sb.from(TABS[current].table).update({ [key]: value || null }).eq('id', id);
   if (error) { row[key] = old; render(); toast('Gagal: ' + error.message); }
-  else toast('Keputusan tersimpan');
+  else toast(value ? 'Keputusan tersimpan, resi ditutup' : 'Keputusan dikosongkan, resi dibuka lagi');
 }
 ['q', 'from', 'to'].forEach(id => $(id).addEventListener('input', render));
 
