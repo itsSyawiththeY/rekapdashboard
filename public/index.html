@@ -39,6 +39,7 @@
   th { background:var(--head); font-size:12px; text-transform:uppercase; letter-spacing:.03em; color:var(--muted); white-space:nowrap; }
   tr:last-child td { border-bottom:0; }
   td.num { text-align:right; font-variant-numeric:tabular-nums; }
+  td select { padding:4px 8px; min-width:140px; }
   td.act { white-space:nowrap; text-align:right; }
   .empty { padding:36px; text-align:center; color:var(--muted); }
   a { color:var(--primary); }
@@ -108,6 +109,7 @@ const BUCKET = 'foto-resi';
 
 // ---------- Konfigurasi tiap sheet ----------
 const TOKO_OPTS = ['Tianzhy', 'SerbaBpp', 'Serbajkt'];
+const KEPUTUSAN_OPTS = ['Cancel', 'Ganti kode', 'Kirim setengah', 'Co Ulang', 'Lanjut offline'];
 const TABS = {
   pembatalan: {
     label: 'Rekap Pembatalan', table: 'pembatalan', dateKey: 'tanggal', qtyKey: 'qty',
@@ -143,6 +145,7 @@ const TABS = {
       { k:'barang', l:'Barang' },
       { k:'qty', l:'Qty', t:'number' },
       { k:'alasan', l:'Alasan' },
+      { k:'keputusan', l:'Keputusan', t:'inline', opts:KEPUTUSAN_OPTS },
       { k:'foto_resi', l:'Foto Resi', t:'file' },
     ],
   },
@@ -213,13 +216,23 @@ function render() {
   const t = TABS[current], list = filtered();
   $('thead').innerHTML = '<tr>' + t.cols.map(c => `<th>${c.l}</th>`).join('') + '<th></th></tr>';
   $('tbody').innerHTML = list.map(r =>
-    '<tr>' + t.cols.map(c => `<td class="${c.t === 'number' ? 'num' : ''}">${fmt(c, r[c.k])}</td>`).join('') +
+    '<tr>' + t.cols.map(c => c.t === 'inline'
+      ? `<td><select data-inline="${r.id}" data-k="${c.k}"><option value="">— Pilih —</option>${c.opts.map(o => `<option ${r[c.k] === o ? 'selected' : ''}>${o}</option>`).join('')}</select></td>`
+      : `<td class="${c.t === 'number' ? 'num' : ''}">${fmt(c, r[c.k])}</td>`).join('') +
     `<td class="act"><button class="btn sm" data-edit="${r.id}">Edit</button> <button class="btn sm danger" data-del="${r.id}">Hapus</button></td></tr>`).join('');
   $('empty').classList.toggle('hidden', list.length > 0);
   const qty = t.qtyKey ? ` · total qty ${list.reduce((s, r) => s + (r[t.qtyKey] || 0), 0)}` : '';
   $('summary').textContent = `${list.length} data${qty}`;
   $('tbody').querySelectorAll('[data-edit]').forEach(b => b.onclick = () => openForm(rows.find(r => r.id === b.dataset.edit)));
+  $('tbody').querySelectorAll('[data-inline]').forEach(sel => sel.onchange = () => saveInline(sel.dataset.inline, sel.dataset.k, sel.value));
   $('tbody').querySelectorAll('[data-del]').forEach(b => b.onclick = () => remove(b.dataset.del));
+}
+async function saveInline(id, key, value) {
+  const row = rows.find(r => r.id === id), old = row[key];
+  row[key] = value || null;
+  const { error } = await sb.from(TABS[current].table).update({ [key]: value || null }).eq('id', id);
+  if (error) { row[key] = old; render(); toast('Gagal: ' + error.message); }
+  else toast('Keputusan tersimpan');
 }
 ['q', 'from', 'to'].forEach(id => $(id).addEventListener('input', render));
 
@@ -232,6 +245,7 @@ function openForm(row = null) {
     const req = c.req ? 'required' : '';
     let input;
     if (c.t === 'select') input = `<input name="${c.k}" list="dl_${c.k}" value="${esc(v ?? '')}"><datalist id="dl_${c.k}">${c.opts.map(o => `<option value="${o}">`).join('')}</datalist>`;
+    else if (c.t === 'inline') input = `<select name="${c.k}"><option value="">— Pilih —</option>${c.opts.map(o => `<option ${v === o ? 'selected' : ''}>${o}</option>`).join('')}</select>`;
     else if (c.t === 'datetime') input = `<input name="${c.k}" type="datetime-local" ${req} value="${v ? localInput(v) : ''}">`;
     else if (c.t === 'date') input = `<input name="${c.k}" type="date" ${req} value="${v ?? ''}">`;
     else if (c.t === 'number') input = `<input name="${c.k}" type="number" min="0" ${req} value="${v ?? 1}">`;
