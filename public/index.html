@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Rekap Cancel</title>
+<title>RecDash</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%233b82f6'/%3E%3Cstop offset='1' stop-color='%238b5cf6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='40' height='40' rx='11' fill='url(%23g)'/%3E%3Crect x='9' y='23' width='5' height='8' rx='2' fill='%23fff' opacity='.75'/%3E%3Crect x='17.5' y='17' width='5' height='14' rx='2' fill='%23fff'/%3E%3Crect x='26' y='13' width='5' height='18' rx='2' fill='%23fff' opacity='.75'/%3E%3Ccircle cx='28.5' cy='7.5' r='2.8' fill='%23fbbf24'/%3E%3C/svg%3E">
 <style>
   :root {
     --bg:#f6f7f9; --card:#fff; --text:#1c2230; --muted:#6b7280; --line:#e5e7eb;
@@ -17,8 +18,19 @@
   }
   * { box-sizing:border-box; }
   body { margin:0; font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--text); }
-  header { display:flex; align-items:center; justify-content:space-between; padding:14px 20px; background:var(--card); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5; }
-  header h1 { font-size:17px; margin:0; }
+  header { display:flex; align-items:center; gap:16px; padding:10px 20px; position:sticky; top:0; z-index:5;
+           background:color-mix(in srgb, var(--card) 88%, transparent); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+           border-bottom:1px solid var(--line); }
+  .brand { display:flex; align-items:center; gap:10px; flex:none; user-select:none; }
+  .brand svg { width:38px; height:38px; flex:none; filter:drop-shadow(0 3px 8px color-mix(in srgb, var(--purple) 40%, transparent)); }
+  .brand .name { font-size:20px; font-weight:800; letter-spacing:-.03em; line-height:1.1; }
+  .brand .name > span:not(.tag) { background:linear-gradient(90deg, var(--blue), var(--purple)); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .brand .tag { display:block; font-size:10.5px; font-weight:500; letter-spacing:.02em; color:var(--muted); }
+  .nav { display:flex; gap:4px; flex:1; overflow-x:auto; margin:0 6px; scrollbar-width:none; }
+  .nav::-webkit-scrollbar { display:none; }
+  .user { display:flex; align-items:center; gap:10px; flex:none; }
+  .avatar { width:32px; height:32px; border-radius:50%; display:grid; place-items:center; font-size:13px; font-weight:700; color:#fff; background:linear-gradient(135deg, var(--blue), var(--purple)); }
+  #who { color:var(--muted); font-size:13px; max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   main { max-width:1200px; margin:0 auto; padding:20px; }
   button, input, select { font:inherit; color:inherit; }
   .btn { padding:8px 14px; border:1px solid var(--line); background:var(--card); border-radius:8px; cursor:pointer; }
@@ -29,9 +41,11 @@
   .btn.sm { padding:4px 10px; font-size:13px; }
   input, select { padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:var(--card); width:100%; }
   input[type=checkbox] { width:auto; }
-  .tabs { display:flex; gap:6px; margin-bottom:14px; overflow-x:auto; }
-  .tab { padding:8px 16px; border-radius:999px; border:1px solid var(--line); background:var(--card); cursor:pointer; white-space:nowrap; }
-  .tab.active { background:var(--primary); color:var(--primary-text); border-color:var(--primary); }
+  .tab { padding:7px 14px; border-radius:10px; border:0; background:transparent; color:var(--muted); font-weight:600; cursor:pointer; white-space:nowrap; }
+  .tab:hover { background:var(--head); color:var(--text); }
+  .tab.active { background:color-mix(in srgb, var(--primary) 14%, transparent); color:var(--primary); }
+  .login .brand { justify-content:center; margin-bottom:2px; }
+  .login .sub { text-align:center; color:var(--muted); margin:-4px 0 6px; font-size:13px; }
 
   /* ringkasan */
   .stats { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:14px; }
@@ -98,6 +112,10 @@
 
   /* HP: tabel jadi kartu */
   @media (max-width:700px) {
+    header { flex-wrap:wrap; gap:8px 12px; padding:10px 12px; }
+    .brand .tag, #who { display:none; }
+    .user { margin-left:auto; }
+    .nav { order:3; flex:0 0 100%; margin:0; }
     main { padding:12px; }
     table { min-width:0; }
     thead { display:none; }
@@ -113,10 +131,21 @@
 </style>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="logo" viewBox="0 0 40 40">
+    <defs><linearGradient id="rdG" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3b82f6"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs>
+    <rect width="40" height="40" rx="11" fill="url(#rdG)"/>
+    <rect x="9" y="23" width="5" height="8" rx="2" fill="#fff" opacity=".75"/>
+    <rect x="17.5" y="17" width="5" height="14" rx="2" fill="#fff"/>
+    <rect x="26" y="13" width="5" height="18" rx="2" fill="#fff" opacity=".75"/>
+    <circle cx="28.5" cy="7.5" r="2.8" fill="#fbbf24"/>
+  </symbol>
+</svg>
 
 <!-- LOGIN -->
 <form id="login" class="login hidden">
-  <h1>Rekap Cancel</h1>
+  <div class="brand"><svg><use href="#logo"/></svg><div class="name">Rec<span>Dash</span></div></div>
+  <p class="sub">Dashboard rekap pembatalan &amp; resi</p>
   <input id="email" type="email" placeholder="Email" required autocomplete="username">
   <input id="password" type="password" placeholder="Password" required autocomplete="current-password">
   <div id="loginErr" class="err"></div>
@@ -126,11 +155,11 @@
 <!-- APP -->
 <div id="app" class="hidden">
   <header>
-    <h1>📦 Rekap Cancel</h1>
-    <div><span id="who" style="color:var(--muted);margin-right:10px"></span><button id="logout" class="btn sm">Keluar</button></div>
+    <div class="brand"><svg><use href="#logo"/></svg><div class="name">Rec<span>Dash</span><span class="tag">Rekap Cancel &amp; Resi</span></div></div>
+    <nav class="nav" id="tabs"></nav>
+    <div class="user"><span id="who"></span><div class="avatar" id="avatar"></div><button id="logout" class="btn sm">Keluar</button></div>
   </header>
   <main>
-    <div class="tabs" id="tabs"></div>
     <div class="stats" id="stats"></div>
 
     <div class="toolbar">
@@ -337,6 +366,7 @@ async function init() {
 function showLogin() { $('app').classList.add('hidden'); $('login').classList.remove('hidden'); }
 function showApp(session) {
   $('who').textContent = session.user.email;
+  $('avatar').textContent = (session.user.email || '?')[0].toUpperCase(); $('avatar').title = session.user.email;
   if (!$('app').classList.contains('hidden')) return; // refresh token: jangan muat ulang data
   $('login').classList.add('hidden'); $('app').classList.remove('hidden');
   if (!S.started) { S.started = true; applyPreset(S.preset); }
