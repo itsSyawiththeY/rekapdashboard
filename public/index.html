@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rekap Cancel</title>
+<style>
+  :root {
+    --bg:#f6f7f9; --card:#fff; --text:#1c2230; --muted:#6b7280; --line:#e5e7eb;
+    --primary:#2563eb; --primary-text:#fff; --danger:#dc2626; --head:#f1f5f9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0f1218; --card:#181c25; --text:#e6e9ef; --muted:#97a0af; --line:#2a303c;
+            --primary:#3b82f6; --danger:#f87171; --head:#1f2430; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--text); }
+  header { display:flex; align-items:center; justify-content:space-between; padding:14px 20px; background:var(--card); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5; }
+  header h1 { font-size:17px; margin:0; }
+  main { max-width:1200px; margin:0 auto; padding:20px; }
+  button, input, select { font:inherit; color:inherit; }
+  .btn { padding:8px 14px; border:1px solid var(--line); background:var(--card); border-radius:8px; cursor:pointer; }
+  .btn:hover { background:var(--head); }
+  .btn.primary { background:var(--primary); color:var(--primary-text); border-color:var(--primary); }
+  .btn.danger { color:var(--danger); }
+  .btn.sm { padding:4px 10px; font-size:13px; }
+  input, select { padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:var(--card); width:100%; }
+  .tabs { display:flex; gap:6px; margin-bottom:16px; overflow-x:auto; }
+  .tab { padding:8px 16px; border-radius:999px; border:1px solid var(--line); background:var(--card); cursor:pointer; white-space:nowrap; }
+  .tab.active { background:var(--primary); color:var(--primary-text); border-color:var(--primary); }
+  .toolbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:12px; }
+  .toolbar .grow { flex:1; min-width:180px; }
+  .toolbar input[type=date] { width:auto; }
+  .toolbar label { color:var(--muted); font-size:13px; }
+  .summary { color:var(--muted); margin:0 0 10px; }
+  .wrap { background:var(--card); border:1px solid var(--line); border-radius:12px; overflow-x:auto; }
+  table { border-collapse:collapse; width:100%; min-width:640px; }
+  th, td { padding:10px 12px; text-align:left; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { background:var(--head); font-size:12px; text-transform:uppercase; letter-spacing:.03em; color:var(--muted); white-space:nowrap; }
+  tr:last-child td { border-bottom:0; }
+  td.num { text-align:right; font-variant-numeric:tabular-nums; }
+  td.act { white-space:nowrap; text-align:right; }
+  .empty { padding:36px; text-align:center; color:var(--muted); }
+  a { color:var(--primary); }
+  dialog { border:1px solid var(--line); border-radius:14px; background:var(--card); color:var(--text); padding:0; width:min(480px,92vw); }
+  dialog::backdrop { background:rgba(0,0,0,.45); }
+  .dlg-head { padding:16px 20px; border-bottom:1px solid var(--line); font-weight:600; }
+  .dlg-body { padding:16px 20px; display:grid; gap:12px; max-height:65vh; overflow:auto; }
+  .dlg-body label { display:grid; gap:4px; font-size:13px; color:var(--muted); }
+  .dlg-foot { padding:14px 20px; border-top:1px solid var(--line); display:flex; justify-content:flex-end; gap:8px; }
+  .login { max-width:360px; margin:12vh auto; padding:24px; background:var(--card); border:1px solid var(--line); border-radius:14px; display:grid; gap:12px; }
+  .login h1 { margin:0 0 4px; font-size:20px; }
+  .err { color:var(--danger); font-size:13px; min-height:18px; }
+  .hidden { display:none !important; }
+  #toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--text); color:var(--bg); padding:10px 16px; border-radius:8px; opacity:0; transition:opacity .2s; pointer-events:none; }
+  #toast.show { opacity:1; }
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<form id="login" class="login hidden">
+  <h1>Rekap Cancel</h1>
+  <input id="email" type="email" placeholder="Email" required autocomplete="username">
+  <input id="password" type="password" placeholder="Password" required autocomplete="current-password">
+  <div id="loginErr" class="err"></div>
+  <button class="btn primary" type="submit">Masuk</button>
+</form>
+
+<!-- APP -->
+<div id="app" class="hidden">
+  <header>
+    <h1>📦 Rekap Cancel</h1>
+    <div><span id="who" style="color:var(--muted);margin-right:10px"></span><button id="logout" class="btn sm">Keluar</button></div>
+  </header>
+  <main>
+    <div class="tabs" id="tabs"></div>
+    <div class="toolbar">
+      <input id="q" class="grow" placeholder="Cari no pesanan, resi, barang, dll…">
+      <label>Dari <input id="from" type="date"></label>
+      <label>Sampai <input id="to" type="date"></label>
+      <button id="exportBtn" class="btn">⬇ CSV</button>
+      <button id="addBtn" class="btn primary">+ Tambah</button>
+    </div>
+    <p class="summary" id="summary"></p>
+    <div class="wrap"><table><thead id="thead"></thead><tbody id="tbody"></tbody></table><div id="empty" class="empty hidden">Belum ada data.</div></div>
+  </main>
+</div>
+
+<dialog id="dlg">
+  <form method="dialog" id="form">
+    <div class="dlg-head" id="dlgTitle"></div>
+    <div class="dlg-body" id="dlgBody"></div>
+    <div class="dlg-foot">
+      <button type="button" class="btn" id="cancelBtn">Batal</button>
+      <button type="submit" class="btn primary" id="saveBtn">Simpan</button>
+    </div>
+  </form>
+</dialog>
+<div id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script>
+const { SUPABASE_URL, SUPABASE_ANON_KEY } = window.APP_CONFIG || {};
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const BUCKET = 'foto-resi';
+
+// ---------- Konfigurasi tiap sheet ----------
+const TABS = {
+  pembatalan: {
+    label: 'Rekap Pembatalan', table: 'pembatalan', dateKey: 'tanggal', qtyKey: 'qty',
+    cols: [
+      { k:'tanggal', l:'Tanggal', t:'datetime' },
+      { k:'no_pesanan', l:'No Pesanan', req:true },
+      { k:'kode_barang', l:'Kode Barang', req:true },
+      { k:'qty', l:'Qty', t:'number' },
+      { k:'alasan', l:'Alasan' },
+    ],
+  },
+  kendala_mingguan: {
+    label: 'Kendala Mingguan', table: 'kendala_mingguan', dateKey: 'tanggal_komplain',
+    cols: [
+      { k:'tanggal_order', l:'Tanggal Order', t:'date' },
+      { k:'tanggal_komplain', l:'Tanggal Komplain', t:'date', req:true },
+      { k:'toko', l:'Toko' },
+      { k:'nama_akun', l:'Nama Akun' },
+      { k:'no_pesanan', l:'No. Pesanan', req:true },
+      { k:'resi', l:'Resi' },
+      { k:'kendala', l:'Kendala' },
+      { k:'solusi', l:'Solusi', t:'select', opts:['Kompensasi','Retur','Refund','Kirim Ulang'] },
+    ],
+  },
+  resi_naik: {
+    label: 'Resi Naik', table: 'resi_naik', dateKey: 'tanggal', qtyKey: 'qty',
+    cols: [
+      { k:'tanggal', l:'Tanggal', t:'date', req:true },
+      { k:'no_pesanan', l:'No Pesanan', req:true },
+      { k:'resi', l:'Resi' },
+      { k:'barang', l:'Barang' },
+      { k:'qty', l:'Qty', t:'number' },
+      { k:'alasan', l:'Alasan' },
+      { k:'foto_resi', l:'Foto Resi', t:'file' },
+    ],
+  },
+};
+
+let current = 'pembatalan';
+let rows = [];
+let editing = null;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const toast = msg => { const t = $('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 2200); };
+
+function fmt(col, v) {
+  if (v == null || v === '') return '';
+  if (col.t === 'datetime') return new Date(v).toLocaleString('id-ID', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
+  if (col.t === 'date') return new Date(v + 'T00:00:00').toLocaleDateString('id-ID', { day:'numeric', month:'short', year:'numeric' });
+  if (col.t === 'file') return `<a href="${esc(v)}" target="_blank" rel="noopener">Lihat foto</a>`;
+  return esc(v);
+}
+const localInput = iso => { const d = new Date(iso); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); };
+
+// ---------- Auth ----------
+async function init() {
+  const { data: { session } } = await sb.auth.getSession();
+  session ? showApp(session) : showLogin();
+  sb.auth.onAuthStateChange((_e, s) => s ? showApp(s) : showLogin());
+}
+function showLogin() { $('app').classList.add('hidden'); $('login').classList.remove('hidden'); }
+function showApp(session) {
+  $('login').classList.add('hidden'); $('app').classList.remove('hidden');
+  $('who').textContent = session.user.email;
+  renderTabs(); load();
+}
+$('login').addEventListener('submit', async e => {
+  e.preventDefault(); $('loginErr').textContent = '';
+  const { error } = await sb.auth.signInWithPassword({ email: $('email').value, password: $('password').value });
+  if (error) $('loginErr').textContent = 'Email atau password salah.';
+});
+$('logout').onclick = () => sb.auth.signOut();
+
+// ---------- Data ----------
+function renderTabs() {
+  $('tabs').innerHTML = Object.entries(TABS).map(([k, t]) =>
+    `<button class="tab ${k === current ? 'active' : ''}" data-k="${k}">${t.label}</button>`).join('');
+  $('tabs').querySelectorAll('.tab').forEach(b => b.onclick = () => { current = b.dataset.k; $('q').value = ''; $('from').value = ''; $('to').value = ''; renderTabs(); load(); });
+}
+
+async function load() {
+  const t = TABS[current];
+  const { data, error } = await sb.from(t.table).select('*').order(t.dateKey, { ascending: false }).order('created_at', { ascending: false });
+  if (error) { toast('Gagal memuat: ' + error.message); return; }
+  rows = data; render();
+}
+
+function filtered() {
+  const t = TABS[current], q = $('q').value.trim().toLowerCase(), from = $('from').value, to = $('to').value;
+  return rows.filter(r => {
+    if (q && !t.cols.some(c => String(r[c.k] ?? '').toLowerCase().includes(q))) return false;
+    const d = r[t.dateKey] ? String(r[t.dateKey]).slice(0, 10) : '';
+    if (from && d < from) return false;
+    if (to && d > to) return false;
+    return true;
+  });
+}
+
+function render() {
+  const t = TABS[current], list = filtered();
+  $('thead').innerHTML = '<tr>' + t.cols.map(c => `<th>${c.l}</th>`).join('') + '<th></th></tr>';
+  $('tbody').innerHTML = list.map(r =>
+    '<tr>' + t.cols.map(c => `<td class="${c.t === 'number' ? 'num' : ''}">${fmt(c, r[c.k])}</td>`).join('') +
+    `<td class="act"><button class="btn sm" data-edit="${r.id}">Edit</button> <button class="btn sm danger" data-del="${r.id}">Hapus</button></td></tr>`).join('');
+  $('empty').classList.toggle('hidden', list.length > 0);
+  const qty = t.qtyKey ? ` · total qty ${list.reduce((s, r) => s + (r[t.qtyKey] || 0), 0)}` : '';
+  $('summary').textContent = `${list.length} data${qty}`;
+  $('tbody').querySelectorAll('[data-edit]').forEach(b => b.onclick = () => openForm(rows.find(r => r.id === b.dataset.edit)));
+  $('tbody').querySelectorAll('[data-del]').forEach(b => b.onclick = () => remove(b.dataset.del));
+}
+['q', 'from', 'to'].forEach(id => $(id).addEventListener('input', render));
+
+// ---------- Form tambah / edit ----------
+function openForm(row = null) {
+  const t = TABS[current]; editing = row;
+  $('dlgTitle').textContent = (row ? 'Edit ' : 'Tambah ') + t.label;
+  $('dlgBody').innerHTML = t.cols.map(c => {
+    const v = row ? row[c.k] : defaultVal(c);
+    const req = c.req ? 'required' : '';
+    let input;
+    if (c.t === 'select') input = `<input name="${c.k}" list="dl_${c.k}" value="${esc(v ?? '')}"><datalist id="dl_${c.k}">${c.opts.map(o => `<option value="${o}">`).join('')}</datalist>`;
+    else if (c.t === 'datetime') input = `<input name="${c.k}" type="datetime-local" ${req} value="${v ? localInput(v) : ''}">`;
+    else if (c.t === 'date') input = `<input name="${c.k}" type="date" ${req} value="${v ?? ''}">`;
+    else if (c.t === 'number') input = `<input name="${c.k}" type="number" min="0" ${req} value="${v ?? 1}">`;
+    else if (c.t === 'file') input = `<input name="${c.k}" type="file" accept="image/*">${v ? `<a href="${esc(v)}" target="_blank" rel="noopener">Foto saat ini</a>` : ''}`;
+    else input = `<input name="${c.k}" type="text" ${req} value="${esc(v ?? '')}">`;
+    return `<label>${c.l}${c.req ? ' *' : ''}${input}</label>`;
+  }).join('');
+  $('dlg').showModal();
+}
+function defaultVal(c) {
+  const now = new Date();
+  if (c.t === 'datetime') return now.toISOString();
+  if (c.t === 'date' && c.req) return now.toISOString().slice(0, 10);
+  if (c.t === 'number') return 1;
+  return '';
+}
+$('addBtn').onclick = () => openForm();
+$('cancelBtn').onclick = () => $('dlg').close();
+
+$('form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const t = TABS[current], fd = new FormData($('form')), payload = {};
+  $('saveBtn').disabled = true;
+  try {
+    for (const c of t.cols) {
+      const v = fd.get(c.k);
+      if (c.t === 'file') {
+        if (v && v.size) {
+          const path = `${Date.now()}-${v.name.replace(/[^\w.\-]/g, '_')}`;
+          const { error } = await sb.storage.from(BUCKET).upload(path, v);
+          if (error) throw error;
+          payload[c.k] = sb.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
+        }
+      } else if (c.t === 'datetime') payload[c.k] = v ? new Date(v).toISOString() : null;
+      else if (c.t === 'number') payload[c.k] = parseInt(v || '0', 10);
+      else payload[c.k] = v === '' ? null : v.trim();
+    }
+    const q = editing ? sb.from(t.table).update(payload).eq('id', editing.id) : sb.from(t.table).insert(payload);
+    const { error } = await q;
+    if (error) throw error;
+    $('dlg').close(); toast('Tersimpan'); load();
+  } catch (err) { toast('Gagal: ' + err.message); }
+  $('saveBtn').disabled = false;
+});
+
+async function remove(id) {
+  if (!confirm('Hapus data ini?')) return;
+  const { error } = await sb.from(TABS[current].table).delete().eq('id', id);
+  error ? toast('Gagal: ' + error.message) : (toast('Terhapus'), load());
+}
+
+// ---------- Export CSV ----------
+$('exportBtn').onclick = () => {
+  const t = TABS[current], list = filtered();
+  const cell = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const csv = [t.cols.map(c => cell(c.l)).join(',')]
+    .concat(list.map(r => t.cols.map(c => cell(r[c.k])).join(','))).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = `${t.table}-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+};
+
+init();
+</script>
+</body>
+</html>
