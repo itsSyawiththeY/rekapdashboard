@@ -5,6 +5,7 @@ create extension if not exists pgcrypto;
 create table if not exists public.pembatalan (
   id uuid primary key default gen_random_uuid(),
   tanggal timestamptz not null default now(),
+  toko text,
   no_pesanan text not null,
   kode_barang text not null,
   qty int not null default 1,
@@ -28,6 +29,7 @@ create table if not exists public.kendala_mingguan (
 create table if not exists public.resi_naik (
   id uuid primary key default gen_random_uuid(),
   tanggal date not null default current_date,
+  toko text,
   no_pesanan text not null,
   resi text,
   barang text,
@@ -36,6 +38,10 @@ create table if not exists public.resi_naik (
   foto_resi text,
   created_at timestamptz not null default now()
 );
+
+-- Untuk database yang sudah dibuat sebelumnya: tambah kolom toko
+alter table public.pembatalan add column if not exists toko text;
+alter table public.resi_naik add column if not exists toko text;
 
 -- Row Level Security: hanya user yang login yang bisa akses
 alter table public.pembatalan enable row level security;
