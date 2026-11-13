@@ -80,6 +80,8 @@
   a { color:var(--primary); }
   .ganti { margin-top:4px; font-size:12px; font-weight:600; color:var(--blue); cursor:pointer; white-space:nowrap; }
   .ganti i { color:var(--muted); font-weight:400; }
+  .scanst { font-size:12px; color:var(--muted); margin-top:4px; }
+  input.auto { background:color-mix(in srgb, var(--orange) 16%, var(--card)); }
   .itm { white-space:nowrap; }
   .itm b { margin-left:6px; color:var(--muted); font-weight:600; }
   .clamp { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; max-width:260px; cursor:pointer; }
@@ -250,6 +252,8 @@ const KEPUTUSAN_OPTS = ['Cancel', 'Ganti kode', 'Kirim setengah', 'Co Ulang', 'L
 const KE_PEMBATALAN = ['Cancel', 'Co Ulang'];
 const GANTI = 'Ganti kode';
 const TOKO_OPTS = ['Tianzhy', 'SerbaBpp', 'Serbajkt'];
+// Nama "Pengirim" di label -> toko di rekap. Tambahkan alias baru di sini.
+const TOKO_ALIAS = { Tianzhy: ['tianzhy'], SerbaBpp: ['serbabpp'], Serbajkt: ['serbajkt'] };
 const KEP_COLOR = { 'Cancel':'red', 'Co Ulang':'orange', 'Ganti kode':'blue', 'Kirim setengah':'purple', 'Lanjut offline':'green' };
 const SOL_COLOR = { 'Kompensasi':'blue', 'Retur':'orange', 'Refund':'red', 'Kirim Ulang':'green' };
 const PALETTE = ['blue', 'purple', 'teal', 'pink', 'orange', 'green'];
@@ -280,7 +284,7 @@ const TABS = {
     ],
   },
   resi_naik: {
-    label: 'Resi Naik', table: 'resi_naik', dateKey: 'tanggal', qtyKey: 'qty', closedKey: 'keputusan', gantiKey: 'kode_pengganti', statKeys: ['toko', 'keputusan'],
+    label: 'Resi Naik', table: 'resi_naik', dateKey: 'tanggal', qtyKey: 'qty', closedKey: 'keputusan', gantiKey: 'kode_pengganti', scan: true, statKeys: ['toko', 'keputusan'],
     openTitle: 'Resi Naik · menunggu keputusan', closedTitle: 'Resi Ditutup',
     cols: [
       { k:'tanggal', l:'Tanggal', t:'date', req:true },
@@ -588,6 +592,118 @@ async function removePhotos(urls) {
   for (let i = 0; i < paths.length; i += 100) await sb.storage.from(BUCKET).remove(paths.slice(i, i + 100));
 }
 
+// ---------- Scan foto resi (barcode + teks) ----------
+const ZXING_JS = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js';
+const OCR_JS = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+const scriptCache = {};
+const loadScript = src => scriptCache[src] || (scriptCache[src] = new Promise((res, rej) => {
+  const el = document.createElement('script'); el.src = src; el.onload = res;
+  el.onerror = () => { delete scriptCache[src]; rej(new Error('Gagal memuat library')); };
+  document.head.appendChild(el);
+}));
+
+// Nomor pesanan Shopee: 6 digit tanggal (YYMMDD) + 8 huruf/angka
+function isOrderNo(v) {
+  if (!/^\d{6}[A-Z0-9]{8}$/.test(v)) return false;
+  const mm = +v.slice(2, 4), dd = +v.slice(4, 6);
+  return mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31;
+}
+
+async function toCanvas(file, maxDim = 1600) {
+  const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  const scale = Math.min(1, maxDim / Math.max(bmp.width, bmp.height));
+  const cv = document.createElement('canvas');
+  cv.width = Math.round(bmp.width * scale); cv.height = Math.round(bmp.height * scale);
+  cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height);
+  if (bmp.close) bmp.close();
+  return cv;
+}
+
+async function readBarcodes(cv) {
+  const out = [];
+  if ('BarcodeDetector' in window) {
+    try { (await new BarcodeDetector().detect(cv)).forEach(b => out.push(b.rawValue)); } catch (_) {}
+  }
+  if (!out.length) {
+    try {
+      await loadScript(ZXING_JS);
+      const reader = new ZXing.BrowserMultiFormatReader();
+      const blob = await new Promise(r => cv.toBlob(r, 'image/png'));
+      const url = URL.createObjectURL(blob);
+      try { out.push((await reader.decodeFromImageUrl(url)).getText()); } finally { URL.revokeObjectURL(url); }
+    } catch (_) {}
+  }
+  return out;
+}
+
+async function readText(cv) {
+  await loadScript(OCR_JS);
+  const worker = await Tesseract.createWorker('eng');
+  try { return (await worker.recognize(cv)).data.text || ''; } finally { await worker.terminate(); }
+}
+
+// Ambil kandidat yang paling sering muncul (resi tercetak berkali-kali di label, jadi lebih tahan salah baca)
+function topMatch(T, re, ok) {
+  const count = {};
+  (T.match(re) || []).forEach(m => { if (ok(m)) count[m] = (count[m] || 0) + 1; });
+  const best = Object.entries(count).sort((a, b) => b[1] - a[1])[0];
+  return best ? best[0] : null;
+}
+
+function parseLabel(codes, text) {
+  const res = {};
+  for (const raw of codes) {
+    const v = String(raw).trim(), u = v.toUpperCase();
+    if (isOrderNo(u)) res.no_pesanan = res.no_pesanan || u;
+    else if (v.length >= 8) res.resi = res.resi || v;
+  }
+  if (text) {
+    const T = text.toUpperCase();
+    if (!res.no_pesanan) { const m = topMatch(T, /\b\d{6}[A-Z0-9]{8}\b/g, isOrderNo); if (m) res.no_pesanan = m; }
+    if (!res.resi) {
+      // bukan nomor pesanan dan bukan nomor HP (62xxxxxxxxxxx)
+      const m = topMatch(T, /\b(?:SPX[A-Z0-9]{8,}|JT\d{10,}|\d{12,})\b/g, v => !isOrderNo(v) && !/^62\d{9,12}$/.test(v));
+      if (m) res.resi = m;
+    }
+    const flat = T.replace(/[^A-Z0-9]/g, '');
+    const toko = TOKO_OPTS.find(o => (TOKO_ALIAS[o] || [o.toLowerCase()]).some(a => flat.includes(a.toUpperCase())));
+    if (toko) res.toko = toko;
+  }
+  return res;
+}
+
+const SCAN_LABEL = { no_pesanan: 'No Pesanan', resi: 'Resi', toko: 'Toko' };
+let scanSeq = 0;
+async function runScan(file) {
+  if (!file) return;
+  const id = ++scanSeq, st = $('scanStatus');
+  const say = m => { if (id === scanSeq && st) st.textContent = m; };
+  try {
+    say('⏳ Membaca barcode…');
+    const cv = await toCanvas(file);
+    const codes = await readBarcodes(cv);
+    let res = parseLabel(codes, '');
+    if (!res.no_pesanan || !res.toko) {
+      say('⏳ Membaca teks di foto… (pertama kali mengunduh data ±10 MB, mohon tunggu)');
+      try { res = parseLabel(codes, await readText(cv)); }
+      catch (_) { say('Teks gagal dibaca, memakai hasil barcode saja.'); }
+    }
+    if (id !== scanSeq) return;
+    const filled = [];
+    for (const [k, v] of Object.entries(res)) {
+      const el = $('dlgBody').querySelector(`[name="${k}"]`);
+      if (el && (!el.value.trim() || (k === 'toko' && !editing))) { el.value = v; el.classList.add('auto'); filled.push(SCAN_LABEL[k]); }
+    }
+    say(filled.length ? `✅ Terisi otomatis: ${filled.join(', ')}. Cek dulu sebelum simpan.`
+      : '⚠️ Belum ada yang terbaca. Coba foto lebih dekat, terang, dan tidak miring, atau isi manual.');
+  } catch (err) { say('⚠️ Gagal membaca foto: ' + err.message); }
+}
+$('dlgBody').addEventListener('change', e => { if (e.target.type === 'file' && tab().scan) runScan(e.target.files[0]); });
+$('dlgBody').addEventListener('input', e => e.target.classList.remove('auto'));
+
+const getLastToko = () => { try { return localStorage.getItem('lastToko') || ''; } catch (_) { return ''; } };
+const setLastToko = v => { try { localStorage.setItem('lastToko', v); } catch (_) {} };
+
 // ---------- Form tambah / edit ----------
 function itemRowHtml(nama = '', qty = 1) {
   return `<div class="item-row"><input class="it-name" type="text" placeholder="Nama / kode barang" value="${esc(nama)}"><input class="it-qty" type="number" min="1" value="${qty}"><button type="button" class="btn sm danger" data-rm>×</button></div>`;
@@ -607,6 +723,7 @@ $('dlgBody').addEventListener('click', e => {
   }
 });
 function defaultVal(c) {
+  if (c.k === 'toko') return getLastToko();
   const now = new Date();
   if (c.t === 'datetime') return now.toISOString();
   if (c.t === 'date' && c.req) return ymd(now);
@@ -615,7 +732,8 @@ function defaultVal(c) {
 function openForm(row = null) {
   const t = tab(); editing = row;
   $('dlgTitle').textContent = (row ? 'Edit ' : 'Tambah ') + t.label;
-  $('dlgBody').innerHTML = t.cols.map(c => {
+  const formCols = t.scan ? [...t.cols.filter(c => c.t === 'file'), ...t.cols.filter(c => c.t !== 'file')] : t.cols;
+  $('dlgBody').innerHTML = formCols.map(c => {
     const v = row ? row[c.k] : defaultVal(c);
     const req = c.req ? 'required' : '';
     let input;
@@ -624,7 +742,7 @@ function openForm(row = null) {
     else if (c.t === 'inline') input = `<select name="${c.k}"><option value="">— Pilih —</option>${c.opts.map(o => `<option ${v === o ? 'selected' : ''}>${o}</option>`).join('')}</select>`;
     else if (c.t === 'datetime') input = `<input name="${c.k}" type="datetime-local" ${req} value="${v ? localInput(v) : ''}">`;
     else if (c.t === 'date') input = `<input name="${c.k}" type="date" ${req} value="${v ?? ''}">`;
-    else if (c.t === 'file') input = `<input name="${c.k}" type="file" accept="image/*">${v ? `<a href="${esc(v)}" target="_blank" rel="noopener">Foto saat ini</a>` : ''}`;
+    else if (c.t === 'file') input = `<input name="${c.k}" type="file" accept="image/*">${v ? `<a href="${esc(v)}" target="_blank" rel="noopener">Foto saat ini</a>` : ''}${t.scan ? '<div id="scanStatus" class="scanst">Pilih foto resi, data akan terisi otomatis (resi, no pesanan, toko).</div>' : ''}`;
     else input = `<input name="${c.k}" type="text" ${req} value="${esc(v ?? '')}">`;
     const head = `${c.l}${c.req ? ' *' : ''}`;
     return c.t === 'items' ? `<div class="field">${head}${input}</div>` : `<label ${c.formOnly ? 'data-ganti-field' : ''}>${head}${input}</label>`;
@@ -677,6 +795,7 @@ $('form').addEventListener('submit', async e => {
     const q = editing ? sb.from(t.table).update(payload).eq('id', editing.id) : sb.from(t.table).insert(payload);
     const { error } = await q;
     if (error) throw error;
+    if (payload.toko) setLastToko(payload.toko);
     if (oldPhoto) removePhotos([oldPhoto]);
     $('dlg').close(); toast('Tersimpan'); reload();
   } catch (err) {
