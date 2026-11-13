@@ -82,6 +82,8 @@
   .ganti i { color:var(--muted); font-weight:400; }
   .scanst { font-size:12px; color:var(--muted); margin-top:4px; }
   input.auto { background:color-mix(in srgb, var(--orange) 16%, var(--card)); }
+  .sep { font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); border-top:1px dashed var(--line); padding-top:10px; margin-top:2px; }
+  input.tick { width:18px; height:18px; cursor:pointer; accent-color:var(--primary); }
   .itm { white-space:nowrap; }
   .itm b { margin-left:6px; color:var(--muted); font-weight:600; }
   .clamp { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; max-width:260px; cursor:pointer; }
@@ -206,15 +208,33 @@
   </form>
 </dialog>
 
-<!-- Kode pengganti -->
-<dialog id="dlgKode">
-  <form method="dialog" id="formKode">
-    <div class="dlg-head">Ganti kode</div>
+<!-- Pertanyaan lanjutan keputusan -->
+<dialog id="dlgFollow">
+  <form method="dialog" id="formFollow">
+    <div class="dlg-head" id="followTitle"></div>
     <div class="dlg-body">
-      <label>Diganti ke kode apa? <input id="kodeInput" type="text" placeholder="Contoh: PW-Y 05" autocomplete="off"></label>
+      <label><span id="followAsk"></span>
+        <input id="followText" type="text" autocomplete="off">
+        <select id="followSelect"></select>
+      </label>
     </div>
     <div class="dlg-foot">
-      <button type="button" class="btn" id="kodeCancel">Batal</button>
+      <button type="button" class="btn" id="followCancel">Batal</button>
+      <button type="submit" class="btn primary">Simpan</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Penggantian Akurat & PIC -->
+<dialog id="dlgAkurat">
+  <form method="dialog" id="formAkurat">
+    <div class="dlg-head">Penggantian di Akurat</div>
+    <div class="dlg-body">
+      <label>Tgl Penggantian Akurat <input type="date" id="akuratTgl"></label>
+      <label>PIC <input type="text" id="akuratPic" placeholder="Nama penanggung jawab" autocomplete="off"></label>
+    </div>
+    <div class="dlg-foot">
+      <button type="button" class="btn" id="akuratCancel">Batal</button>
       <button type="submit" class="btn primary">Simpan</button>
     </div>
   </form>
@@ -248,16 +268,16 @@ const STAT_CAP = 5000;
 const MAX_EXPORT = 20000;
 
 // ---------- Konfigurasi ----------
-const KEPUTUSAN_OPTS = ['Cancel', 'Ganti kode', 'Kirim setengah', 'Co Ulang', 'Lanjut offline'];
+const KEPUTUSAN_OPTS = ['Cancel', 'Ganti kode', 'Kirim setengah', 'Co Ulang', 'Lanjut offline', 'Titip resi'];
+const GUDANG_OPTS = ['Tangerang', 'Balikpapan', 'Surabaya', 'Batam'];
 const KE_PEMBATALAN = ['Cancel', 'Co Ulang'];
-const GANTI = 'Ganti kode';
 const TOKO_OPTS = ['Tianzhy', 'SerbaBpp', 'Serbajkt'];
 // Nama "Pengirim" di label -> toko di rekap. Tambahkan alias baru di sini.
 const TOKO_ALIAS = { Tianzhy: ['tianzhy'], SerbaBpp: ['serbabpp'], Serbajkt: ['serbajkt'] };
-const KEP_COLOR = { 'Cancel':'red', 'Co Ulang':'orange', 'Ganti kode':'blue', 'Kirim setengah':'purple', 'Lanjut offline':'green' };
+const KEP_COLOR = { 'Cancel':'red', 'Co Ulang':'orange', 'Ganti kode':'blue', 'Kirim setengah':'purple', 'Lanjut offline':'green', 'Titip resi':'teal' };
 const SOL_COLOR = { 'Kompensasi':'blue', 'Retur':'orange', 'Refund':'red', 'Kirim Ulang':'green' };
 const PALETTE = ['blue', 'purple', 'teal', 'pink', 'orange', 'green'];
-const GROUP_LABEL = { toko:'Toko', keputusan:'Keputusan', solusi:'Solusi' };
+const GROUP_LABEL = { toko:'Toko', gudang:'Gudang', keputusan:'Keputusan', solusi:'Solusi' };
 
 const TABS = {
   pembatalan: {
@@ -284,18 +304,47 @@ const TABS = {
     ],
   },
   resi_naik: {
-    label: 'Resi Naik', table: 'resi_naik', dateKey: 'tanggal', qtyKey: 'qty', closedKey: 'keputusan', gantiKey: 'kode_pengganti', scan: true, statKeys: ['toko', 'keputusan'],
+    label: 'Resi Naik', table: 'resi_naik', dateKey: 'tanggal', qtyKey: 'qty', closedKey: 'keputusan', afterKeys: ['tgl_ganti_akurat', 'pic'], scan: true, statKeys: ['toko', 'gudang', 'keputusan'],
+    // Pertanyaan lanjutan untuk keputusan tertentu
+    followups: {
+      'Ganti kode': { key:'kode_pengganti', title:'Ganti kode', ask:'Diganti ke kode apa?', type:'text', placeholder:'Contoh: PW-Y 05', prefix:'→ ', empty:'isi kode', error:'Isi kode pengganti', toast:'Diganti ke ' },
+      'Titip resi': { key:'gudang_titip', title:'Titip resi', ask:'Titip ke gudang mana?', type:'choice', opts:GUDANG_OPTS, prefix:'→ Gudang ', empty:'pilih gudang', error:'Pilih gudang tujuan titip', toast:'Dititip ke gudang ' },
+    },
     openTitle: 'Resi Naik · menunggu keputusan', closedTitle: 'Resi Ditutup',
     cols: [
       { k:'tanggal', l:'Tanggal', t:'date', req:true },
       { k:'toko', l:'Toko', t:'select', opts:TOKO_OPTS, badge:'toko' },
+      { k:'gudang', l:'Gudang', t:'choice', opts:GUDANG_OPTS, badge:'gudang' },
       { k:'no_pesanan', l:'No Pesanan', req:true },
       { k:'resi', l:'Resi' },
       { k:'items', l:'Barang', t:'items', nameKey:'barang' },
       { k:'alasan', l:'Alasan', clamp:true },
       { k:'keputusan', l:'Keputusan', t:'inline', opts:KEPUTUSAN_OPTS, badge:'keputusan' },
-      { k:'kode_pengganti', l:'Diganti ke kode', formOnly:true },
+      { k:'kode_pengganti', l:'Diganti ke kode', formOnly:true, follow:'Ganti kode' },
+      { k:'gudang_titip', l:'Titip ke gudang', t:'choice', opts:GUDANG_OPTS, formOnly:true, follow:'Titip resi' },
+      { k:'tgl_ganti_akurat', l:'Tgl Penggantian Akurat', t:'date', formOnly:true, after:true },
+      { k:'pic', l:'PIC', formOnly:true, after:true },
+      { k:'_akurat', l:'Akurat / PIC', t:'akurat', virtual:true, sortKey:'tgl_ganti_akurat' },
       { k:'foto_resi', l:'Foto Resi', t:'file' },
+    ],
+  },
+  returan: {
+    label: 'Rekap Returan', table: 'returan', dateKey: 'tgl_datang', qtyKey: 'qty', statKeys: ['toko'],
+    sums: [['qty', 'Total qty'], ['qty_rusak', 'Qty rusak'], ['qty_layak', 'Qty layak jual']],
+    cols: [
+      { k:'tgl_datang', l:'Tgl Datang Barang', t:'date', req:true },
+      { k:'tgl_beli', l:'Tgl Beli', t:'date', req:true, noDefault:true },
+      { k:'resi', l:'No. Resi', req:true },
+      { k:'toko', l:'Nama Toko', t:'select', opts:TOKO_OPTS, badge:'toko', req:true },
+      { k:'nama_barang', l:'Nama Barang', req:true },
+      { k:'qty', l:'Qty', t:'number', req:true, def:1 },
+      { k:'qty_rusak', l:'Qty Rusak', t:'number', req:true, def:0 },
+      { k:'qty_layak', l:'Qty Layak Jual', t:'number', req:true, def:0 },
+      { k:'keterangan', l:'Keterangan', clamp:true, sep:'Opsional' },
+      { k:'no_invoice', l:'No Invoice' },
+      { k:'tgl_retur_akurat', l:'Tgl Retur di Akurat', t:'date' },
+      { k:'penyesuaian', l:'Penyesuaian' },
+      { k:'ceklist', l:'Ceklist', t:'bool' },
     ],
   },
 };
@@ -321,7 +370,7 @@ const colOf = (t, key) => t.cols.find(c => c.k === key);
 
 const itemsOf = (r, c) => Array.isArray(r.items) && r.items.length ? r.items
   : (r[c.nameKey] ? [{ nama: r[c.nameKey], qty: r.qty || 1 }] : []);
-const valText = (c, r) => c.t === 'items' ? itemsOf(r, c).map(i => `${i.nama} x${i.qty}`).join('; ') : (r[c.k] ?? '');
+const valText = (c, r) => c.t === 'bool' ? (r[c.k] ? 'Ya' : 'Tidak') : c.t === 'items' ? itemsOf(r, c).map(i => `${i.nama} x${i.qty}`).join('; ') : (r[c.k] ?? '');
 
 function colorOf(kind, v) {
   if (!v) return 'gray';
@@ -341,11 +390,11 @@ function fmt(col, v) {
 
 function selectList(t) {
   const ks = new Set(['id', 'created_at']);
-  t.cols.forEach(c => { if (c.t === 'items') { ks.add('items'); ks.add(c.nameKey); ks.add('qty'); } else ks.add(c.k); });
+  t.cols.filter(c => !c.virtual).forEach(c => { if (c.t === 'items') { ks.add('items'); ks.add(c.nameKey); ks.add('qty'); } else ks.add(c.k); });
   return [...ks].join(',');
 }
 function searchKeys(t) {
-  return t.cols.flatMap(c => c.t === 'items' ? [c.nameKey] : (['date', 'datetime', 'number', 'file'].includes(c.t) ? [] : [c.k]));
+  return t.cols.filter(c => !c.virtual).flatMap(c => c.t === 'items' ? [c.nameKey] : (['date', 'datetime', 'number', 'file', 'bool'].includes(c.t) ? [] : [c.k]));
 }
 
 // Filter tanggal + pencarian, dijalankan di server (Supabase)
@@ -454,14 +503,14 @@ async function loadClosedCount() {
 
 async function loadStats() {
   const t = tab(), id = ++seq.stats;
-  const cols = ['qty', ...t.statKeys].join(',');
-  let qb = sb.from(t.table).select(t.qtyKey ? cols : t.statKeys.join(','), { count: 'exact' });
+  const sums = t.sums || (t.qtyKey ? [[t.qtyKey, 'Total qty']] : []);
+  let qb = sb.from(t.table).select([...sums.map(x => x[0]), ...t.statKeys].join(','), { count: 'exact' });
   qb = baseFilter(qb, t).order(t.dateKey, { ascending: false }).range(0, STAT_CAP - 1);
   const { data, count, error } = await qb;
   if (id !== seq.stats || error) return;
   const total = count || 0;
   let html = `<div class="stat"><b>${total}</b><span>Data</span></div>`;
-  if (t.qtyKey) html += `<div class="stat"><b>${data.reduce((s, r) => s + (r.qty || 0), 0)}</b><span>Total qty</span></div>`;
+  sums.forEach(([k, label]) => { html += `<div class="stat"><b>${data.reduce((n, r) => n + (r[k] || 0), 0)}</b><span>${label}</span></div>`; });
   for (const k of t.statKeys) {
     const g = {}; data.forEach(r => { const v = r[k] || ''; g[v] = (g[v] || 0) + 1; });
     const badges = Object.entries(g).sort((a, b) => b[1] - a[1]).map(([v, n]) =>
@@ -476,10 +525,18 @@ async function loadStats() {
 function cellHtml(c, r) {
   const v = r[c.k];
   if (c.t === 'items') return itemsOf(r, c).map(i => `<div class="itm">${esc(i.nama)}<b>×${i.qty}</b></div>`).join('');
+  if (c.t === 'bool') return `<input type="checkbox" class="tick" data-tick="${r.id}" data-k="${c.k}" ${v ? 'checked' : ''} title="${esc(c.l)}">`;
+  if (c.t === 'akurat') {
+    if (!r.keputusan) return '';   // tombol baru muncul setelah ada keputusan
+    if (!r.tgl_ganti_akurat && !r.pic) return `<button class="btn sm" data-akurat="${r.id}">+ Akurat &amp; PIC</button>`;
+    const tgl = r.tgl_ganti_akurat ? fmt({ t:'date' }, r.tgl_ganti_akurat) : '<i>tgl?</i>';
+    return `<div class="ganti" data-akurat="${r.id}" title="Klik untuk ubah">📅 ${tgl} · ${r.pic ? esc(r.pic) : '<i>PIC?</i>'}</div>`;
+  }
   if (c.t === 'inline') {
     const sel = `<select class="sel b-${colorOf(c.badge, v)}" data-inline="${r.id}" data-k="${c.k}"><option value="">— Pilih —</option>${c.opts.map(o => `<option ${v === o ? 'selected' : ''}>${o}</option>`).join('')}</select>`;
-    const kode = v === GANTI ? `<div class="ganti" data-ganti="${r.id}" title="Klik untuk ubah">→ ${r.kode_pengganti ? esc(r.kode_pengganti) : '<i>isi kode</i>'}</div>` : '';
-    return `<div>${sel}${kode}</div>`;
+    const f = (tab().followups || {})[v];
+    const extra = f ? `<div class="ganti" data-follow="${r.id}" title="Klik untuk ubah">${f.prefix}${r[f.key] ? esc(r[f.key]) : `<i>${f.empty}</i>`}</div>` : '';
+    return `<div>${sel}${extra}</div>`;
   }
   if (c.t === 'file') return fmt(c, v);
   if (v == null || v === '') return '';
@@ -494,11 +551,11 @@ function renderTable(sec) {
   const arrow = k => S.sort.key === k ? (S.sort.asc ? ' ▲' : ' ▼') : '';
   $(head).innerHTML = '<tr>' + t.cols.filter(c => !c.formOnly).map(c => {
     if (c.t === 'file') return `<th>${c.l}</th>`;
-    const sk = c.t === 'items' ? c.nameKey : c.k;
+    const sk = c.t === 'items' ? c.nameKey : (c.sortKey || c.k);
     return `<th class="sortable" data-sort="${sk}">${c.l}${arrow(sk)}</th>`;
   }).join('') + '<th></th></tr>';
   $(body).innerHTML = list.map(r => '<tr>' + t.cols.filter(c => !c.formOnly).map(c =>
-    `<td data-label="${esc(c.l)}">${cellHtml(c, r)}</td>`).join('') +
+    `<td data-label="${esc(c.l)}" class="${c.t === 'number' ? 'num' : ''}">${cellHtml(c, r)}</td>`).join('') +
     `<td class="act"><button class="btn sm" data-edit="${r.id}">Edit</button> <button class="btn sm danger" data-del="${r.id}">Hapus</button></td></tr>`).join('');
   $(empty).classList.toggle('hidden', list.length > 0);
   $(empty).textContent = sec === 'closed' ? 'Belum ada resi yang ditutup pada filter ini.'
@@ -529,20 +586,23 @@ $('closedSec').addEventListener('toggle', () => { if ($('closedSec').open) loadS
 const findRow = id => [...S.rows.main, ...S.rows.closed].find(r => r.id === id);
 ['tbody', 'tbody2'].forEach(id => {
   $(id).addEventListener('click', e => {
-    const b = e.target.closest('[data-edit],[data-del],[data-ganti]'); if (!b) return;
-    if (b.dataset.ganti) askKode(b.dataset.ganti);
+    const b = e.target.closest('[data-edit],[data-del],[data-follow],[data-akurat]'); if (!b) return;
+    if (b.dataset.akurat) askAkurat(b.dataset.akurat);
+    else if (b.dataset.follow) askFollow(b.dataset.follow, findRow(b.dataset.follow).keputusan);
     else b.dataset.edit ? openForm(findRow(b.dataset.edit)) : remove(b.dataset.del);
   });
   $(id).addEventListener('change', e => {
     const s = e.target.closest('[data-inline]'); if (s) saveInline(s.dataset.inline, s.dataset.k, s.value);
+    const tk = e.target.closest('[data-tick]'); if (tk) saveTick(tk.dataset.tick, tk.dataset.k, tk.checked);
   });
 });
 
 async function saveInline(id, key, value) {
   const t = tab();
-  if (t.gantiKey && value === GANTI) { askKode(id); return; }   // tanya kode tujuan dulu
+  if ((t.followups || {})[value]) { askFollow(id, value); return; }   // tanya dulu (kode / gudang)
   const patch = { [key]: value || null };
-  if (t.gantiKey) patch[t.gantiKey] = null;                      // keputusan lain: hapus kode pengganti
+  Object.values(t.followups || {}).forEach(f => { patch[f.key] = null; }); // keputusan lain: hapus jawaban lanjutan
+  if (!value) (t.afterKeys || []).forEach(k => { patch[k] = null; });        // resi dibuka lagi: hapus data Akurat & PIC
   const { error } = await sb.from(t.table).update(patch).eq('id', id);
   if (error) toast('Gagal: ' + error.message);
   else toast(!value ? 'Keputusan dikosongkan, resi dibuka lagi'
@@ -551,25 +611,55 @@ async function saveInline(id, key, value) {
   reload();
 }
 
-// ---------- Dialog "Ganti kode ke apa?" ----------
-let kodeTarget = null, kodeSaved = false;
-function askKode(id) {
-  const row = findRow(id);
-  kodeTarget = id; kodeSaved = false;
-  $('kodeInput').value = row && row.kode_pengganti ? row.kode_pengganti : '';
-  $('dlgKode').showModal(); $('kodeInput').focus();
+async function saveTick(id, key, checked) {
+  const { error } = await sb.from(tab().table).update({ [key]: checked }).eq('id', id);
+  if (error) { toast('Gagal: ' + error.message); reload(); }
+  else { const r = findRow(id); if (r) r[key] = checked; toast(checked ? 'Ditandai ✓' : 'Tanda dihapus'); }
 }
-$('kodeCancel').onclick = () => $('dlgKode').close();
-$('dlgKode').addEventListener('close', () => { if (!kodeSaved) reload(); }); // batal: kembalikan dropdown
-$('formKode').addEventListener('submit', async e => {
+
+// ---------- Dialog Penggantian Akurat & PIC (muncul setelah ada keputusan) ----------
+let akuratTarget = null;
+function askAkurat(id) {
+  const r = findRow(id); akuratTarget = id;
+  $('akuratTgl').value = r.tgl_ganti_akurat || ymd(new Date());
+  $('akuratPic').value = r.pic || getLast('pic');
+  $('dlgAkurat').showModal(); $('akuratPic').focus();
+}
+$('akuratCancel').onclick = () => $('dlgAkurat').close();
+$('formAkurat').addEventListener('submit', async e => {
   e.preventDefault();
-  const kode = $('kodeInput').value.trim();
-  if (!kode) { toast('Isi kode pengganti dulu'); return; }
-  const t = tab();
-  const { error } = await sb.from(t.table).update({ [t.closedKey]: GANTI, [t.gantiKey]: kode }).eq('id', kodeTarget);
+  const pic = $('akuratPic').value.trim();
+  const { error } = await sb.from(tab().table).update({ tgl_ganti_akurat: $('akuratTgl').value || null, pic: pic || null }).eq('id', akuratTarget);
   if (error) { toast('Gagal: ' + error.message); return; }
-  kodeSaved = true; $('dlgKode').close();
-  toast('Diganti ke ' + kode); reload();
+  if (pic) setLast('pic', pic);
+  $('dlgAkurat').close(); toast('Akurat & PIC tersimpan'); reload();
+});
+
+// ---------- Dialog pertanyaan lanjutan (Ganti kode -> kode apa, Titip resi -> gudang mana) ----------
+let followTarget = null, followVal = null, followSaved = false;
+function askFollow(id, value) {
+  const f = tab().followups[value], row = findRow(id), isSel = f.type === 'choice';
+  followTarget = id; followVal = value; followSaved = false;
+  $('followTitle').textContent = f.title; $('followAsk').textContent = f.ask;
+  $('followText').classList.toggle('hidden', isSel); $('followSelect').classList.toggle('hidden', !isSel);
+  const cur = row && row[f.key] ? row[f.key] : '';
+  if (isSel) $('followSelect').innerHTML = '<option value="">— Pilih —</option>' + f.opts.map(o => `<option ${cur === o ? 'selected' : ''}>${o}</option>`).join('');
+  else { $('followText').value = cur; $('followText').placeholder = f.placeholder || ''; }
+  $('dlgFollow').showModal(); (isSel ? $('followSelect') : $('followText')).focus();
+}
+$('followCancel').onclick = () => $('dlgFollow').close();
+$('dlgFollow').addEventListener('close', () => { if (!followSaved) reload(); }); // batal: kembalikan dropdown
+$('formFollow').addEventListener('submit', async e => {
+  e.preventDefault();
+  const t = tab(), f = t.followups[followVal];
+  const val = (f.type === 'choice' ? $('followSelect').value : $('followText').value).trim();
+  if (!val) { toast(f.error); return; }
+  const patch = { [t.closedKey]: followVal, [f.key]: val };
+  Object.values(t.followups).filter(x => x !== f).forEach(x => { patch[x.key] = null; });
+  const { error } = await sb.from(t.table).update(patch).eq('id', followTarget);
+  if (error) { toast('Gagal: ' + error.message); return; }
+  followSaved = true; $('dlgFollow').close();
+  toast(f.toast + val); reload();
 });
 
 // ---------- Foto: kompres & hapus ----------
@@ -701,8 +791,8 @@ async function runScan(file) {
 $('dlgBody').addEventListener('change', e => { if (e.target.type === 'file' && tab().scan) runScan(e.target.files[0]); });
 $('dlgBody').addEventListener('input', e => e.target.classList.remove('auto'));
 
-const getLastToko = () => { try { return localStorage.getItem('lastToko') || ''; } catch (_) { return ''; } };
-const setLastToko = v => { try { localStorage.setItem('lastToko', v); } catch (_) {} };
+const getLast = k => { try { return localStorage.getItem('last_' + k) || ''; } catch (_) { return ''; } };
+const setLast = (k, v) => { try { localStorage.setItem('last_' + k, v); } catch (_) {} };
 
 // ---------- Form tambah / edit ----------
 function itemRowHtml(nama = '', qty = 1) {
@@ -723,37 +813,45 @@ $('dlgBody').addEventListener('click', e => {
   }
 });
 function defaultVal(c) {
-  if (c.k === 'toko') return getLastToko();
+  if (c.k === 'toko' || c.k === 'gudang') return getLast(c.k);
   const now = new Date();
   if (c.t === 'datetime') return now.toISOString();
-  if (c.t === 'date' && c.req) return ymd(now);
+  if (c.t === 'date' && c.req && !c.noDefault) return ymd(now);
+  if (c.t === 'number') return c.def ?? 0;
   return '';
 }
 function openForm(row = null) {
   const t = tab(); editing = row;
   $('dlgTitle').textContent = (row ? 'Edit ' : 'Tambah ') + t.label;
-  const formCols = t.scan ? [...t.cols.filter(c => c.t === 'file'), ...t.cols.filter(c => c.t !== 'file')] : t.cols;
+  const base = t.cols.filter(c => !c.virtual);
+  const formCols = t.scan ? [...base.filter(c => c.t === 'file'), ...base.filter(c => c.t !== 'file')] : base;
   $('dlgBody').innerHTML = formCols.map(c => {
     const v = row ? row[c.k] : defaultVal(c);
     const req = c.req ? 'required' : '';
     let input;
-    if (c.t === 'select') input = `<input name="${c.k}" list="dl_${c.k}" value="${esc(v ?? '')}"><datalist id="dl_${c.k}">${c.opts.map(o => `<option value="${o}">`).join('')}</datalist>`;
+    if (c.t === 'select') input = `<input name="${c.k}" list="dl_${c.k}" ${req} value="${esc(v ?? '')}"><datalist id="dl_${c.k}">${c.opts.map(o => `<option value="${o}">`).join('')}</datalist>`;
     else if (c.t === 'items') input = itemsInputHtml(row, c);
-    else if (c.t === 'inline') input = `<select name="${c.k}"><option value="">— Pilih —</option>${c.opts.map(o => `<option ${v === o ? 'selected' : ''}>${o}</option>`).join('')}</select>`;
+    else if (c.t === 'number') input = `<input name="${c.k}" type="number" min="0" ${req} value="${v ?? c.def ?? 0}">`;
+    else if (c.t === 'bool') input = '';
+    else if (c.t === 'inline' || c.t === 'choice') input = `<select name="${c.k}"><option value="">— Pilih —</option>${c.opts.map(o => `<option ${v === o ? 'selected' : ''}>${o}</option>`).join('')}</select>`;
     else if (c.t === 'datetime') input = `<input name="${c.k}" type="datetime-local" ${req} value="${v ? localInput(v) : ''}">`;
     else if (c.t === 'date') input = `<input name="${c.k}" type="date" ${req} value="${v ?? ''}">`;
     else if (c.t === 'file') input = `<input name="${c.k}" type="file" accept="image/*">${v ? `<a href="${esc(v)}" target="_blank" rel="noopener">Foto saat ini</a>` : ''}${t.scan ? '<div id="scanStatus" class="scanst">Pilih foto resi, data akan terisi otomatis (resi, no pesanan, toko).</div>' : ''}`;
     else input = `<input name="${c.k}" type="text" ${req} value="${esc(v ?? '')}">`;
     const head = `${c.l}${c.req ? ' *' : ''}`;
-    return c.t === 'items' ? `<div class="field">${head}${input}</div>` : `<label ${c.formOnly ? 'data-ganti-field' : ''}>${head}${input}</label>`;
+    const sep = c.sep ? `<div class="sep">${c.sep}</div>` : '';
+    if (c.t === 'bool') return `${sep}<label class="chk"><input type="checkbox" name="${c.k}" ${v ? 'checked' : ''}> ${c.l}</label>`;
+    const attr = c.follow ? ` data-follow="${esc(c.follow)}"` : c.after ? ' data-after' : '';
+    return sep + (c.t === 'items' ? `<div class="field">${head}${input}</div>` : `<label${attr}>${head}${input}</label>`);
   }).join('');
-  $('dlg').showModal(); toggleGanti();
+  $('dlg').showModal(); toggleFollow();
 }
-function toggleGanti() {
-  const sel = $('dlgBody').querySelector('[name=keputusan]'), f = $('dlgBody').querySelector('[data-ganti-field]');
-  if (sel && f) f.classList.toggle('hidden', sel.value !== GANTI);
+function toggleFollow() {
+  const sel = $('dlgBody').querySelector('[name=keputusan]'); if (!sel) return;
+  $('dlgBody').querySelectorAll('[data-follow]').forEach(el => el.classList.toggle('hidden', el.dataset.follow !== sel.value));
+  $('dlgBody').querySelectorAll('[data-after]').forEach(el => el.classList.toggle('hidden', !sel.value));  // Akurat & PIC: hanya setelah ada keputusan
 }
-$('dlgBody').addEventListener('change', e => { if (e.target.name === 'keputusan') toggleGanti(); });
+$('dlgBody').addEventListener('change', e => { if (e.target.name === 'keputusan') toggleFollow(); });
 $('addBtn').onclick = () => openForm();
 $('cancelBtn').onclick = () => $('dlg').close();
 
@@ -764,6 +862,8 @@ $('form').addEventListener('submit', async e => {
   $('saveBtn').disabled = true;
   try {
     for (const c of t.cols) {
+      if (c.virtual) continue;
+      if (c.t === 'bool') { payload[c.k] = fd.get(c.k) !== null; continue; }
       if (c.t === 'items') {
         const list = [...$('dlgBody').querySelectorAll('.item-row')].map(el => ({
           nama: el.querySelector('.it-name').value.trim(),
@@ -786,16 +886,22 @@ $('form').addEventListener('submit', async e => {
           oldPhoto = editing ? editing[c.k] : null;
         }
       } else if (c.t === 'datetime') payload[c.k] = v ? new Date(v).toISOString() : null;
+      else if (c.t === 'number') payload[c.k] = Math.max(0, parseInt(v || '0', 10));
       else payload[c.k] = v === '' ? null : v.trim();
     }
-    if (t.gantiKey) {
-      if (payload[t.closedKey] === GANTI) { if (!payload[t.gantiKey]) throw new Error('Isi kode pengganti'); }
-      else payload[t.gantiKey] = null;
+    for (const [val, f] of Object.entries(t.followups || {})) {
+      if (payload[t.closedKey] === val) { if (!payload[f.key]) throw new Error(f.error); }
+      else payload[f.key] = null;
+    }
+    if (t.afterKeys && !payload[t.closedKey]) t.afterKeys.forEach(k => { payload[k] = null; });  // tanpa keputusan: kosongkan Akurat & PIC
+    if (t.table === 'returan' && payload.qty_rusak + payload.qty_layak !== payload.qty) {
+      const ok = confirm(`Qty rusak (${payload.qty_rusak}) + layak jual (${payload.qty_layak}) = ${payload.qty_rusak + payload.qty_layak}, tidak sama dengan Qty (${payload.qty}).\nTetap simpan?`);
+      if (!ok) { $('saveBtn').disabled = false; return; }
     }
     const q = editing ? sb.from(t.table).update(payload).eq('id', editing.id) : sb.from(t.table).insert(payload);
     const { error } = await q;
     if (error) throw error;
-    if (payload.toko) setLastToko(payload.toko);
+    ['toko', 'gudang'].forEach(k => { if (payload[k]) setLast(k, payload[k]); });
     if (oldPhoto) removePhotos([oldPhoto]);
     $('dlg').close(); toast('Tersimpan'); reload();
   } catch (err) {
@@ -828,7 +934,8 @@ async function fetchAll(t, fn, sel) {
 }
 function toCsv(t, list) {
   const cell = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  return [t.cols.map(c => cell(c.l)).join(',')].concat(list.map(r => t.cols.map(c => cell(valText(c, r))).join(','))).join('\n');
+  const cs = t.cols.filter(c => !c.virtual);
+  return [cs.map(c => cell(c.l)).join(',')].concat(list.map(r => cs.map(c => cell(valText(c, r))).join(','))).join('\n');
 }
 function downloadCsv(name, csv) {
   const a = document.createElement('a');
