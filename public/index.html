@@ -41,6 +41,7 @@
   .btn.sm { padding:4px 10px; font-size:13px; }
   input, select { padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:var(--card); width:100%; }
   input[type=checkbox] { width:auto; }
+  textarea { width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--text); font:13px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; resize:vertical; }
   .tab { padding:7px 14px; border-radius:10px; border:0; background:transparent; color:var(--muted); font-weight:600; cursor:pointer; white-space:nowrap; }
   .tab:hover { background:var(--head); color:var(--text); }
   .tab.active { background:color-mix(in srgb, var(--primary) 14%, transparent); color:var(--primary); }
@@ -225,6 +226,22 @@
   </form>
 </dialog>
 
+<!-- Buat teks (Ganti kode / Titip resi) -->
+<dialog id="dlgTeks">
+  <form method="dialog" id="formTeks">
+    <div class="dlg-head" id="teksTitle"></div>
+    <div class="dlg-body">
+      <label id="teksPickWrap" class="hidden">Barang yang diganti <select id="teksPick"></select></label>
+      <div id="teksWarn" class="scanst hidden"></div>
+      <label>Teks (boleh diedit sebelum disalin) <textarea id="teksOut" rows="10"></textarea></label>
+    </div>
+    <div class="dlg-foot">
+      <button type="button" class="btn" id="teksClose">Tutup</button>
+      <button type="submit" class="btn primary">📋 Salin</button>
+    </div>
+  </form>
+</dialog>
+
 <!-- Penggantian Akurat & PIC -->
 <dialog id="dlgAkurat">
   <form method="dialog" id="formAkurat">
@@ -277,6 +294,33 @@ const TOKO_ALIAS = { Tianzhy: ['tianzhy'], SerbaBpp: ['serbabpp'], Serbajkt: ['s
 const KEP_COLOR = { 'Cancel':'red', 'Co Ulang':'orange', 'Ganti kode':'blue', 'Kirim setengah':'purple', 'Lanjut offline':'green', 'Titip resi':'teal' };
 const SOL_COLOR = { 'Kompensasi':'blue', 'Retur':'orange', 'Refund':'red', 'Kirim Ulang':'green' };
 const PALETTE = ['blue', 'purple', 'teal', 'pink', 'orange', 'green'];
+// Nama toko di rekap -> nama toko online yang ditulis di teks. Sesuaikan / tambahkan di sini.
+const TOKO_ONLINE = { Tianzhy: 'tianzhy', Serbajkt: 'jkt8serbacollection' };
+// Singkatan gudang untuk baris "TITIP KE GUDANG ...". Sesuaikan kalau singkatannya beda.
+const GUDANG_KODE = { Tangerang: 'TGR', Balikpapan: 'BPN', Surabaya: 'SBY', Batam: 'BTM' };
+const tokoOnline = t => TOKO_ONLINE[t] || t || '-';
+const TEXT_TEMPLATES = {
+  'Ganti kode': (r, items, pick) => {
+    const it = items[pick] || items[0];
+    return [
+      'Data Penggantian Kode Barang :',
+      `Resi : ${r.resi || '-'}`,
+      `No.Pesanan : ${r.no_pesanan || '-'}`,
+      `Nama Toko online : ${tokoOnline(r.toko)}`,
+      `Nama barang yang diganti : ${it.nama}`,
+      `Ke : ${r.kode_pengganti || '-'}`,
+      `QTY : ${it.qty}`,
+    ].join('\n');
+  },
+  'Titip resi': (r, items) => [
+    'Data TITIP RESI :',
+    `No pesanan : ${r.no_pesanan || '-'}`,
+    `Nama Toko online : ${tokoOnline(r.toko)}`,
+    ...items.flatMap(i => [`Nama barang : ${i.nama}`, `QTY : ${i.qty}`]),
+    '',
+    `TITIP KE GUDANG ${r.gudang_titip ? (GUDANG_KODE[r.gudang_titip] || r.gudang_titip.toUpperCase()) : '-'}`,
+  ].join('\n'),
+};
 const GROUP_LABEL = { toko:'Toko', gudang:'Gudang', keputusan:'Keputusan', solusi:'Solusi' };
 
 const TABS = {
@@ -304,7 +348,7 @@ const TABS = {
     ],
   },
   resi_naik: {
-    label: 'Resi Naik', table: 'resi_naik', dateKey: 'tanggal', qtyKey: 'qty', closedKey: 'keputusan', afterKeys: ['tgl_ganti_akurat', 'pic'], scan: true, statKeys: ['toko', 'gudang', 'keputusan'],
+    label: 'Resi Naik', table: 'resi_naik', dateKey: 'tanggal', qtyKey: 'qty', closedKey: 'keputusan', texts: TEXT_TEMPLATES, afterKeys: ['tgl_ganti_akurat', 'pic'], scan: true, statKeys: ['toko', 'gudang', 'keputusan'],
     // Pertanyaan lanjutan untuk keputusan tertentu
     followups: {
       'Ganti kode': { key:'kode_pengganti', title:'Ganti kode', ask:'Diganti ke kode apa?', type:'text', placeholder:'Contoh: PW-Y 05', prefix:'→ ', empty:'isi kode', error:'Isi kode pengganti', toast:'Diganti ke ' },
@@ -556,7 +600,7 @@ function renderTable(sec) {
   }).join('') + '<th></th></tr>';
   $(body).innerHTML = list.map(r => '<tr>' + t.cols.filter(c => !c.formOnly).map(c =>
     `<td data-label="${esc(c.l)}" class="${c.t === 'number' ? 'num' : ''}">${cellHtml(c, r)}</td>`).join('') +
-    `<td class="act"><button class="btn sm" data-edit="${r.id}">Edit</button> <button class="btn sm danger" data-del="${r.id}">Hapus</button></td></tr>`).join('');
+    `<td class="act">${t.texts && t.texts[r[t.closedKey]] ? `<button class="btn sm" data-teks="${r.id}" title="Buat teks ${esc(r[t.closedKey])}">📋 Teks</button> ` : ''}<button class="btn sm" data-edit="${r.id}">Edit</button> <button class="btn sm danger" data-del="${r.id}">Hapus</button></td></tr>`).join('');
   $(empty).classList.toggle('hidden', list.length > 0);
   $(empty).textContent = sec === 'closed' ? 'Belum ada resi yang ditutup pada filter ini.'
     : t.closedKey ? 'Tidak ada resi yang menunggu keputusan.' : 'Tidak ada data pada filter ini.';
@@ -586,8 +630,9 @@ $('closedSec').addEventListener('toggle', () => { if ($('closedSec').open) loadS
 const findRow = id => [...S.rows.main, ...S.rows.closed].find(r => r.id === id);
 ['tbody', 'tbody2'].forEach(id => {
   $(id).addEventListener('click', e => {
-    const b = e.target.closest('[data-edit],[data-del],[data-follow],[data-akurat]'); if (!b) return;
-    if (b.dataset.akurat) askAkurat(b.dataset.akurat);
+    const b = e.target.closest('[data-edit],[data-del],[data-follow],[data-akurat],[data-teks]'); if (!b) return;
+    if (b.dataset.teks) openTeks(b.dataset.teks);
+    else if (b.dataset.akurat) askAkurat(b.dataset.akurat);
     else if (b.dataset.follow) askFollow(b.dataset.follow, findRow(b.dataset.follow).keputusan);
     else b.dataset.edit ? openForm(findRow(b.dataset.edit)) : remove(b.dataset.del);
   });
@@ -616,6 +661,36 @@ async function saveTick(id, key, checked) {
   if (error) { toast('Gagal: ' + error.message); reload(); }
   else { const r = findRow(id); if (r) r[key] = checked; toast(checked ? 'Ditandai ✓' : 'Tanda dihapus'); }
 }
+
+// ---------- Buat teks sesuai keputusan (Ganti kode / Titip resi) ----------
+let teksRow = null, teksItems = [];
+function openTeks(id) {
+  const t = tab(), r = findRow(id), ic = t.cols.find(c => c.t === 'items');
+  teksRow = r; teksItems = itemsOf(r, ic);
+  if (!teksItems.length) teksItems = [{ nama: '-', qty: r.qty || 0 }];
+  const pickable = r[t.closedKey] === 'Ganti kode' && teksItems.length > 1;   // banyak barang: pilih yang diganti
+  $('teksTitle').textContent = 'Teks · ' + r[t.closedKey];
+  $('teksPickWrap').classList.toggle('hidden', !pickable);
+  $('teksPick').innerHTML = teksItems.map((i, n) => `<option value="${n}">${esc(i.nama)} (×${i.qty})</option>`).join('');
+  renderTeks(); $('dlgTeks').showModal();
+}
+function renderTeks() {
+  const t = tab(), r = teksRow, f = (t.followups || {})[r[t.closedKey]];
+  $('teksOut').value = t.texts[r[t.closedKey]](r, teksItems, parseInt($('teksPick').value || '0', 10));
+  const miss = f && !r[f.key];
+  $('teksWarn').classList.toggle('hidden', !miss);
+  if (miss) $('teksWarn').textContent = `⚠️ ${f.ask} belum diisi. Klik tulisan "${f.empty}" di kolom Keputusan untuk mengisinya, lalu buat teks lagi.`;
+}
+$('teksPick').addEventListener('change', renderTeks);
+$('teksClose').onclick = () => $('dlgTeks').close();
+$('formTeks').addEventListener('submit', async e => {
+  e.preventDefault();
+  const txt = $('teksOut').value;
+  let ok = false;
+  try { await navigator.clipboard.writeText(txt); ok = true; }
+  catch (_) { $('teksOut').select(); try { ok = document.execCommand('copy'); } catch (__) {} }
+  toast(ok ? 'Teks disalin ✓' : 'Gagal menyalin, blok teksnya lalu salin manual');
+});
 
 // ---------- Dialog Penggantian Akurat & PIC (muncul setelah ada keputusan) ----------
 let akuratTarget = null;
