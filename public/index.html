@@ -86,6 +86,14 @@
   .sep { font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); border-top:1px dashed var(--line); padding-top:10px; margin-top:2px; }
   input.tick { width:18px; height:18px; cursor:pointer; accent-color:var(--primary); }
   .itm { white-space:nowrap; }
+  .itm .sub { margin-left:6px; font-size:12px; color:var(--muted); }
+  .item-row.x { grid-template-columns:1fr 1fr 1fr auto; align-items:end; margin-bottom:10px; padding-bottom:10px; border-bottom:1px dashed var(--line); }
+  .item-row.x .it-name { grid-column:1 / -1; }
+  .joke { display:flex; align-items:center; gap:10px; margin:0 0 10px; padding:9px 14px; border:1px dashed var(--line); border-radius:12px; background:color-mix(in srgb, var(--orange) 8%, var(--card)); cursor:pointer; min-height:46px; transition:opacity .25s; }
+  .joke.fade { opacity:0; }
+  .joke .jk-ico { font-size:18px; flex:none; }
+  .joke #jokeText { font-style:italic; color:var(--muted); }
+  @media (prefers-reduced-motion: reduce) { .joke { transition:none; } }
   .itm b { margin-left:6px; color:var(--muted); font-weight:600; }
   .clamp { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; max-width:260px; cursor:pointer; }
   .clamp.open { display:block; -webkit-line-clamp:unset; }
@@ -167,6 +175,7 @@
   <main>
     <div class="stats" id="stats"></div>
 
+    <div class="joke" id="joke" title="Klik untuk joke berikutnya"><span class="jk-ico">😄</span><span id="jokeText"></span></div>
     <div class="toolbar">
       <input id="q" class="grow" placeholder="Cari no pesanan, resi, barang, dll…">
       <button id="addBtn" class="btn primary">+ Tambah</button>
@@ -357,6 +366,7 @@ const TABS = {
     openTitle: 'Resi Naik · menunggu keputusan', closedTitle: 'Resi Ditutup',
     cols: [
       { k:'tanggal', l:'Tanggal', t:'date', req:true },
+      { k:'tgl_beli', l:'Tgl Beli', t:'date' },
       { k:'toko', l:'Toko', t:'select', opts:TOKO_OPTS, badge:'toko' },
       { k:'gudang', l:'Gudang', t:'choice', opts:GUDANG_OPTS, badge:'gudang' },
       { k:'no_pesanan', l:'No Pesanan', req:true },
@@ -380,10 +390,8 @@ const TABS = {
       { k:'tgl_beli', l:'Tgl Beli', t:'date', req:true, noDefault:true },
       { k:'resi', l:'No. Resi', req:true },
       { k:'toko', l:'Nama Toko', t:'select', opts:TOKO_OPTS, badge:'toko', req:true },
-      { k:'nama_barang', l:'Nama Barang', req:true },
-      { k:'qty', l:'Qty', t:'number', req:true, def:1 },
-      { k:'qty_rusak', l:'Qty Rusak', t:'number', req:true, def:0 },
-      { k:'qty_layak', l:'Qty Layak Jual', t:'number', req:true, def:0 },
+      { k:'items', l:'Barang', t:'items', nameKey:'nama_barang', req:true,
+        extra:[{ k:'rusak', l:'Rusak', col:'qty_rusak' }, { k:'layak', l:'Layak jual', col:'qty_layak' }] },
       { k:'keterangan', l:'Keterangan', clamp:true, sep:'Opsional' },
       { k:'no_invoice', l:'No Invoice' },
       { k:'tgl_retur_akurat', l:'Tgl Retur di Akurat', t:'date' },
@@ -413,8 +421,8 @@ const tab = () => TABS[S.tab];
 const colOf = (t, key) => t.cols.find(c => c.k === key);
 
 const itemsOf = (r, c) => Array.isArray(r.items) && r.items.length ? r.items
-  : (r[c.nameKey] ? [{ nama: r[c.nameKey], qty: r.qty || 1 }] : []);
-const valText = (c, r) => c.t === 'bool' ? (r[c.k] ? 'Ya' : 'Tidak') : c.t === 'items' ? itemsOf(r, c).map(i => `${i.nama} x${i.qty}`).join('; ') : (r[c.k] ?? '');
+  : (r[c.nameKey] ? [{ nama: r[c.nameKey], qty: r.qty || 1, rusak: r.qty_rusak || 0, layak: r.qty_layak || 0 }] : []);
+const valText = (c, r) => c.t === 'bool' ? (r[c.k] ? 'Ya' : 'Tidak') : c.t === 'items' ? itemsOf(r, c).map(i => `${i.nama} x${i.qty}` + (c.extra ? ` (rusak ${i.rusak || 0}, layak ${i.layak || 0})` : '')).join('; ') : (r[c.k] ?? '');
 
 function colorOf(kind, v) {
   if (!v) return 'gray';
@@ -434,7 +442,7 @@ function fmt(col, v) {
 
 function selectList(t) {
   const ks = new Set(['id', 'created_at']);
-  t.cols.filter(c => !c.virtual).forEach(c => { if (c.t === 'items') { ks.add('items'); ks.add(c.nameKey); ks.add('qty'); } else ks.add(c.k); });
+  t.cols.filter(c => !c.virtual).forEach(c => { if (c.t === 'items') { ks.add('items'); ks.add(c.nameKey); ks.add('qty'); (c.extra || []).forEach(x => ks.add(x.col)); } else ks.add(c.k); });
   return [...ks].join(',');
 }
 function searchKeys(t) {
@@ -568,7 +576,7 @@ async function loadStats() {
 // ---------- Render tabel ----------
 function cellHtml(c, r) {
   const v = r[c.k];
-  if (c.t === 'items') return itemsOf(r, c).map(i => `<div class="itm">${esc(i.nama)}<b>×${i.qty}</b></div>`).join('');
+  if (c.t === 'items') return itemsOf(r, c).map(i => `<div class="itm">${esc(i.nama)}<b>×${i.qty}</b>${c.extra ? `<span class="sub">${c.extra.map(x => `${x.l.toLowerCase()} ${i[x.k] || 0}`).join(' · ')}</span>` : ''}</div>`).join('');
   if (c.t === 'bool') return `<input type="checkbox" class="tick" data-tick="${r.id}" data-k="${c.k}" ${v ? 'checked' : ''} title="${esc(c.l)}">`;
   if (c.t === 'akurat') {
     if (!r.keputusan) return '';   // tombol baru muncul setelah ada keputusan
@@ -819,15 +827,23 @@ function parseLabel(codes, text) {
   const res = {};
   for (const raw of codes) {
     const v = String(raw).trim(), u = v.toUpperCase();
-    if (isOrderNo(u)) res.no_pesanan = res.no_pesanan || u;
-    else if (v.length >= 8) res.resi = res.resi || v;
+    if (isOrderNo(u)) res.no_pesanan = res.no_pesanan || u;                    // Shopee
+    else if (/^\d{17,20}$/.test(v)) res.no_pesanan = res.no_pesanan || v;      // TikTok / Tokopedia (18 digit)
+    else if (/^[A-Z0-9]{8,20}$/.test(u)) res.resi = res.resi || v;             // resi; QR berisi URL / teks panjang diabaikan
   }
   if (text) {
     const T = text.toUpperCase();
-    if (!res.no_pesanan) { const m = topMatch(T, /\b\d{6}[A-Z0-9]{8}\b/g, isOrderNo); if (m) res.no_pesanan = m; }
+    if (!res.no_pesanan) {
+      let m = topMatch(T, /\b\d{6}[A-Z0-9]{8}\b/g, isOrderNo);                 // Shopee
+      if (!m) {                                                                 // TikTok / Tokopedia: angka setelah "Order ID"
+        const ctx = [...T.matchAll(/ORDER\s*ID\s*[:.\-]?\s*(\d{15,20})/g)].map(x => x[1]);
+        m = topMatch(ctx.join(' '), /\d{15,20}/g, () => true) || topMatch(T, /\b\d{17,20}\b/g, () => true);
+      }
+      if (m) res.no_pesanan = m;
+    }
     if (!res.resi) {
       // bukan nomor pesanan dan bukan nomor HP (62xxxxxxxxxxx)
-      const m = topMatch(T, /\b(?:SPX[A-Z0-9]{8,}|JT\d{10,}|\d{12,})\b/g, v => !isOrderNo(v) && !/^62\d{9,12}$/.test(v));
+      const m = topMatch(T, /\b(?:SPX[A-Z0-9]{8,}|JT\d{10,}|\d{12,15})\b/g, v => !isOrderNo(v) && v !== res.no_pesanan && !/^62\d{9,12}$/.test(v));
       if (m) res.resi = m;
     }
     const flat = T.replace(/[^A-Z0-9]/g, '');
@@ -837,7 +853,7 @@ function parseLabel(codes, text) {
   return res;
 }
 
-const SCAN_LABEL = { no_pesanan: 'No Pesanan', resi: 'Resi', toko: 'Toko' };
+const SCAN_LABEL = { no_pesanan: 'No Pesanan', resi: 'Resi', toko: 'Toko', tgl_beli: 'Tgl Beli' };
 let scanSeq = 0;
 async function runScan(file) {
   if (!file) return;
@@ -854,6 +870,9 @@ async function runScan(file) {
       catch (_) { say('Teks gagal dibaca, memakai hasil barcode saja.'); }
     }
     if (id !== scanSeq) return;
+    // 6 digit pertama nomor pesanan Shopee = tanggal beli (YYMMDD)
+    const on = String(res.no_pesanan || '').toUpperCase();
+    if (isOrderNo(on) && !res.tgl_beli) res.tgl_beli = `20${on.slice(0, 2)}-${on.slice(2, 4)}-${on.slice(4, 6)}`;
     const filled = [];
     for (const [k, v] of Object.entries(res)) {
       const el = $('dlgBody').querySelector(`[name="${k}"]`);
@@ -865,26 +884,36 @@ async function runScan(file) {
 }
 $('dlgBody').addEventListener('change', e => { if (e.target.type === 'file' && tab().scan) runScan(e.target.files[0]); });
 $('dlgBody').addEventListener('input', e => e.target.classList.remove('auto'));
+// ketik / tempel nomor pesanan Shopee -> Tgl Beli terisi otomatis (kalau masih kosong)
+$('dlgBody').addEventListener('change', e => {
+  if (e.target.name !== 'no_pesanan') return;
+  const tb = $('dlgBody').querySelector('[name="tgl_beli"]'), on = e.target.value.trim().toUpperCase();
+  if (tb && !tb.value && isOrderNo(on)) { tb.value = `20${on.slice(0, 2)}-${on.slice(2, 4)}-${on.slice(4, 6)}`; tb.classList.add('auto'); }
+});
 
 const getLast = k => { try { return localStorage.getItem('last_' + k) || ''; } catch (_) { return ''; } };
 const setLast = (k, v) => { try { localStorage.setItem('last_' + k, v); } catch (_) {} };
 
 // ---------- Form tambah / edit ----------
-function itemRowHtml(nama = '', qty = 1) {
-  return `<div class="item-row"><input class="it-name" type="text" placeholder="Nama / kode barang" value="${esc(nama)}"><input class="it-qty" type="number" min="1" value="${qty}"><button type="button" class="btn sm danger" data-rm>×</button></div>`;
+function itemRowHtml(c, i = {}) {
+  const nama = esc(i.nama || ''), qty = i.qty ?? 1;
+  if (!c.extra) return `<div class="item-row"><input class="it-name" type="text" placeholder="Nama / kode barang" value="${nama}"><input class="it-qty" type="number" min="1" value="${qty}"><button type="button" class="btn sm danger" data-rm>×</button></div>`;
+  const mini = (cls, label, val, min) => `<label class="mini">${label}<input class="${cls}" type="number" min="${min}" value="${val}"></label>`;
+  return `<div class="item-row x"><input class="it-name" type="text" placeholder="Nama / kode barang" value="${nama}">${mini('it-qty', 'Qty', qty, 1)}${c.extra.map(x => mini('it-' + x.k, x.l, i[x.k] ?? 0, 0)).join('')}<button type="button" class="btn sm danger" data-rm>×</button></div>`;
 }
 function itemsInputHtml(row, c) {
   const list = row ? itemsOf(row, c) : [];
-  return `<div id="itemsBox">${(list.length ? list : [{ nama: '', qty: 1 }]).map(i => itemRowHtml(i.nama, i.qty)).join('')}</div><div><button type="button" class="btn sm" id="addItem">+ Tambah barang</button></div>`;
+  return `<div id="itemsBox">${(list.length ? list : [{}]).map(i => itemRowHtml(c, i)).join('')}</div><div><button type="button" class="btn sm" id="addItem">+ Tambah barang</button></div>`;
 }
 $('dlgBody').addEventListener('click', e => {
   if (e.target.id === 'addItem') {
-    $('itemsBox').insertAdjacentHTML('beforeend', itemRowHtml());
+    const c = tab().cols.find(x => x.t === 'items');
+    $('itemsBox').insertAdjacentHTML('beforeend', itemRowHtml(c));
     $('itemsBox').lastElementChild.querySelector('.it-name').focus();
   } else if (e.target.dataset.rm !== undefined) {
     const box = e.target.closest('#itemsBox'), el = e.target.closest('.item-row');
     if (box.children.length > 1) el.remove();
-    else { el.querySelector('.it-name').value = ''; el.querySelector('.it-qty').value = 1; }
+    else { el.querySelector('.it-name').value = ''; el.querySelector('.it-qty').value = 1; el.querySelectorAll('.it-rusak,.it-layak').forEach(x => { x.value = 0; }); }
   }
 });
 function defaultVal(c) {
@@ -940,13 +969,15 @@ $('form').addEventListener('submit', async e => {
       if (c.virtual) continue;
       if (c.t === 'bool') { payload[c.k] = fd.get(c.k) !== null; continue; }
       if (c.t === 'items') {
-        const list = [...$('dlgBody').querySelectorAll('.item-row')].map(el => ({
-          nama: el.querySelector('.it-name').value.trim(),
-          qty: Math.max(1, parseInt(el.querySelector('.it-qty').value || '1', 10)),
-        })).filter(i => i.nama);
+        const list = [...$('dlgBody').querySelectorAll('.item-row')].map(el => {
+          const it = { nama: el.querySelector('.it-name').value.trim(), qty: Math.max(1, parseInt(el.querySelector('.it-qty').value || '1', 10)) };
+          (c.extra || []).forEach(x => { it[x.k] = Math.max(0, parseInt(el.querySelector('.it-' + x.k).value || '0', 10)); });
+          return it;
+        }).filter(i => i.nama);
         if (c.req && !list.length) throw new Error('Isi minimal 1 barang');
         payload.items = list;
         payload.qty = list.reduce((sum, i) => sum + i.qty, 0);
+        (c.extra || []).forEach(x => { payload[x.col] = list.reduce((sum, i) => sum + (i[x.k] || 0), 0); });
         payload[c.nameKey] = list.length ? list.map(i => i.nama).join(', ') : null;
         continue;
       }
@@ -969,9 +1000,9 @@ $('form').addEventListener('submit', async e => {
       else payload[f.key] = null;
     }
     if (t.afterKeys && !payload[t.closedKey]) t.afterKeys.forEach(k => { payload[k] = null; });  // tanpa keputusan: kosongkan Akurat & PIC
-    if (t.table === 'returan' && payload.qty_rusak + payload.qty_layak !== payload.qty) {
-      const ok = confirm(`Qty rusak (${payload.qty_rusak}) + layak jual (${payload.qty_layak}) = ${payload.qty_rusak + payload.qty_layak}, tidak sama dengan Qty (${payload.qty}).\nTetap simpan?`);
-      if (!ok) { $('saveBtn').disabled = false; return; }
+    if (t.table === 'returan') {
+      const bad = (payload.items || []).filter(i => (i.rusak || 0) + (i.layak || 0) !== i.qty);
+      if (bad.length && !confirm(`Qty rusak + layak jual tidak sama dengan Qty untuk:\n- ${bad.map(i => i.nama).join('\n- ')}\nTetap simpan?`)) { $('saveBtn').disabled = false; return; }
     }
     const q = editing ? sb.from(t.table).update(payload).eq('id', editing.id) : sb.from(t.table).insert(payload);
     const { error } = await q;
@@ -1083,6 +1114,121 @@ $('formArsip').addEventListener('submit', async e => {
   } catch (err) { toast('Gagal: ' + err.message); }
   finally { $('arsipGo').disabled = false; }
 });
+
+// ---------- Jokes bapak-bapak (100 buah, ganti sendiri tiap 12 detik, klik untuk lanjut) ----------
+const JOKES = [
+  "Kenapa laptop kedinginan? Karena Windows-nya kebuka.",
+  "Ikan apa yang nggak bisa berenang? Ikan sarden kalengan.",
+  "Kenapa sepeda nggak bisa berdiri sendiri? Karena dia two-tired alias capek.",
+  "Kenapa hantu nggak pernah bohong? Karena dia transparan.",
+  "Kenapa astronot sering menyendiri? Karena dia butuh ruang.",
+  "Kenapa matematika selalu sedih? Karena masalahnya terlalu banyak.",
+  "Kenapa ular nggak bisa main bola? Karena nggak punya kaki.",
+  "Apa yang selalu naik tapi nggak pernah turun? Umur.",
+  "Apa yang punya banyak kunci tapi nggak bisa buka pintu? Keyboard.",
+  "Apa yang bisa pecah tanpa disentuh? Janji.",
+  "Apa yang makin dicuci makin kotor? Air.",
+  "Apa yang punya leher tapi nggak punya kepala? Botol.",
+  "Apa yang selalu ada di depan tapi nggak kelihatan? Masa depan.",
+  "Apa yang punya tangan tapi nggak bisa tepuk tangan? Jam.",
+  "Apa yang basah saat mengeringkan? Handuk.",
+  "Apa yang punya mata tapi nggak bisa melihat? Jarum.",
+  "Apa yang punya gigi tapi nggak bisa menggigit? Sisir.",
+  "Apa yang makin diambil makin besar? Lubang.",
+  "Apa yang makin sore makin panjang? Bayangan.",
+  "Apa yang ada di tengah-tengah Jakarta? Huruf K.",
+  "Kenapa ayam nyeberang jalan? Biar sampai ke seberang.",
+  "Apa yang selalu datang tapi nggak pernah sampai? Besok.",
+  "Apa yang punya empat kaki tapi nggak bisa jalan? Meja.",
+  "Apa yang punya cincin tapi nggak punya jari? Telepon.",
+  "Kenapa buku kelihatan pintar? Karena banyak isinya.",
+  "Kenapa lampu lalu lintas pemalu? Karena tiap hari ganti baju di depan umum.",
+  "Kenapa kalender sering stres? Karena harinya selalu dihitung.",
+  "Kenapa kulkas jadi tempat curhat favorit? Karena pendengarnya dingin dan tenang.",
+  "Kenapa pisang nggak pernah kesepian? Karena selalu hidup sesisir.",
+  "Kenapa kacamata nggak pernah salah lihat? Karena selalu fokus.",
+  "Kenapa payung nggak pernah galau? Karena tugasnya jelas: melindungi.",
+  "Apa persamaan bapak-bapak dan WiFi? Kalau dekat sinyalnya kuat, kalau jauh suka putus nyambung.",
+  "Apa bedanya bapak-bapak dan GPS? GPS bilang belok kanan, bapak bilang tenang, Bapak tahu jalan pintas.",
+  "Kenapa bapak-bapak jago teka-teki? Karena tiap hari ditanya: Pak, kunci motor di mana?",
+  "Kenapa ikan nggak mau main komputer? Takut kena Net.",
+  "Bapak-bapak bilang sebentar lagi artinya antara lima menit sampai besok pagi.",
+  "Bapak-bapak kalau ditanya kuncinya mana selalu jawab: tadi ditaruh di situ. Situ yang mana, nggak pernah dijelaskan.",
+  "Bapak-bapak di toko bangunan mengetuk-ngetuk semua barang sebelum beli, entah apa yang didengarkan.",
+  "Bapak-bapak ke minimarket niatnya beli galon, pulang bawa tujuh kantong belanjaan.",
+  "Jarak jalan kaki bapak ke sekolah dulu selalu bertambah setiap kali diceritakan.",
+  "Bapak-bapak selalu punya satu kantong plastik berisi kantong plastik.",
+  "Matiin lampunya! Kamu pikir bayar listrik pakai daun? (Bapak, sejak tahun 90-an)",
+  "Bapak-bapak pasang rak tanpa buku panduan. Tiga jam kemudian sisa dua sekrup, katanya cadangan.",
+  "Bapak-bapak yang bilang Ayah nggak marah dengan suara tenang itulah yang paling serem.",
+  "Bapak-bapak mengecek ban dengan menendangnya. Hasilnya selalu: aman.",
+  "Bapak-bapak parkir mundur: semua orang diam, semua orang berdoa.",
+  "Remote TV adalah tongkat kekuasaan bapak-bapak di rumah.",
+  "Bapak-bapak punya satu jaket yang umurnya lebih tua dari anaknya, dan masih dipakai.",
+  "Bapak-bapak nonton bola: pelatih terbaik sedunia, kantornya di sofa.",
+  "Bapak-bapak kasih arah: Lurus aja, nanti ada belokan, terus... Bapak lupa, tanya orang aja.",
+  "Bapak-bapak bilang satu cangkir aja, lalu dituang lagi sampai ampasnya tinggal bayangan.",
+  "Ada kabel kusut? Bapak-bapak selalu bilang: Sini, Bapak yang urus. Lalu kusutnya makin canggih.",
+  "Bapak-bapak punya satu laci berisi kabel, baterai bekas, dan kunci yang entah buat apa.",
+  "Bapak-bapak menjawab Udah makan? dengan: Udah, tadi di kantor. Padahal cuma gorengan dan kopi.",
+  "Bapak-bapak pura-pura paham saat dijelaskan aplikasi baru: Oh iya, iya. Lalu telepon anaknya.",
+  "Bapak-bapak punya dua mode: tidur sambil nonton TV, dan Bapak nggak tidur, cuma merem.",
+  "Bapak-bapak kalau servis motor: Kayaknya businya. Padahal baru lihat dari jauh.",
+  "Bapak-bapak paling senang rapat RT: punya alasan sah untuk makan gorengan.",
+  "Bapak-bapak ngecek tekanan ban sambil jongkok dengan wajah serius, seperti dokter bedah.",
+  "Bapak-bapak menyimpan struk siapa tahu perlu, sampai tebalnya mengalahkan isi dompet.",
+  "Kalau bisa diperbaiki, jangan dibeli. Itulah sebabnya gudang bapak-bapak penuh barang nanti diperbaiki.",
+  "Bapak-bapak mengajari naik motor dengan satu kalimat: Pelan-pelan aja. Sambil pegang jok seperti pegang nyawa.",
+  "Bapak-bapak lewat warung kopi, motornya otomatis melambat sendiri.",
+  "Dulu mah nggak ada HP, tapi tetap bisa ketemu. Padahal sering nunggu tiga jam.",
+  "Bapak-bapak nggak pernah tersesat, cuma mengambil rute alternatif selama satu jam.",
+  "Bapak-bapak lihat orang bikin tembok: berdiri di belakangnya, tangan di pinggang, ngasih saran yang nggak diminta.",
+  "Bapak-bapak beli sandal baru, tapi yang dipakai tetap sandal lama yang talinya sudah dilem.",
+  "Tunggu di sini, jangan ke mana-mana. Lalu bapak menghilang sepuluh menit di toko sebelah.",
+  "Bapak-bapak mau ngobrol serius: Duduk dulu. Semua langsung merasa salah tanpa tahu salahnya apa.",
+  "Bapak-bapak menghitung kembalian dua kali, bukan karena nggak percaya, tapi karena ritual.",
+  "Resi itu kayak mantan: kadang naik, kadang hilang, kadang nggak jelas di mana.",
+  "Barang retur bukan nggak laku, cuma lagi liburan sebentar.",
+  "Kurir itu romantis: janjinya sebentar lagi sampai, padahal masih di kota sebelah.",
+  "Gudang itu kayak hati: luas, tapi susah menemukan satu barang yang pas.",
+  "Qty rusak boleh ada, asal semangat kerjanya tetap layak jual.",
+  "Ceklist itu seperti harapan: dicentang dulu, beresnya belakangan.",
+  "Rekap yang rapi itu seperti bapak yang datang tepat waktu: langka, tapi bikin tenang.",
+  "Nomor pesanan ada 14 karakter, tapi yang salah ketik selalu satu.",
+  "Titip resi itu seperti titip salam: sampai atau nggaknya tergantung siapa yang dititipi.",
+  "Kalau semua barang cocok dengan sistem, curigai sistemnya, bukan stoknya.",
+  "Stok opname itu reuni: barang yang hilang selalu ketemu setelah acara selesai.",
+  "Selisih satu pcs itu kecil, sampai dicari selama tiga jam.",
+  "Foto resi yang buram itu mirip jawaban bapak: Pokoknya ada, tadi.",
+  "Cancel hari ini, co ulang besok: hidup hanya soal kode yang diganti.",
+  "Ganti kode itu seperti ganti nomor HP: orangnya sama, cuma yang dicari yang berbeda.",
+  "Kopi sebelum rekap, rekap sebelum pulang. Itu falsafah.",
+  "Kardus itu seperti bapak: kelihatannya biasa saja, tapi menanggung banyak beban.",
+  "Lakban selalu habis tepat saat paket terakhir.",
+  "Satu-satunya yang pasti di gudang: barang yang dicari ada di rak paling bawah.",
+  "Resi naik itu seperti gaji naik: dinanti-nanti, tapi kadang cuma angka di layar.",
+  "Spidol hitam itu tulang punggung gudang: dipinjam sepuluh orang, hilang satu-satunya.",
+  "Barang rusak itu jujur: dia nggak pernah berpura-pura utuh.",
+  "Tanggal beli itu seperti usia: penting dicatat, jarang disebut.",
+  "Rekap tanpa catatan itu seperti bapak tanpa kopi: tetap jalan, tapi aneh.",
+  "Gudang yang rapi itu mitos, seperti bapak yang tahu letak kunci motornya.",
+  "Setiap tumpukan kardus menyimpan satu barang yang harus ditemukan hari ini.",
+  "Pesanan salah kirim itu cuma kejutan, tapi bukan yang diharapkan pembeli.",
+  "Bekerja dengan data rapi itu seperti naik motor dengan ban cukup angin: semuanya terasa ringan.",
+  "Kalau hari ini capek, tenang: besok pasti ada resi baru. Semangat!",
+  "Bapak-bapak hafal harga bensin tahun 1998, tapi lupa di mana kacamata yang sedang dipakai."
+];
+(function startJokes() {
+  const order = JOKES.map((_, i) => i);
+  for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
+  const box = $('joke'), text = $('jokeText');
+  let n = 0, timer = null;
+  const next = () => JOKES[order[n++ % order.length]];
+  const show = () => { box.classList.add('fade'); setTimeout(() => { text.textContent = next(); box.classList.remove('fade'); }, 250); };
+  const restart = () => { clearInterval(timer); timer = setInterval(show, 12000); };
+  text.textContent = next(); restart();
+  box.addEventListener('click', () => { show(); restart(); });
+})();
 
 init();
 </script>
